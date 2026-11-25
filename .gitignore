@@ -1,0 +1,42 @@
+# Local collection and original documents
+/Tubes/
+/Gitarren/
+/Roehrenverstaerker/
+/Trafos/
+/Musikboxen/
+/imports/
+/exports/
+/backups/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-*
+
+# Environment and authentication
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+supabase/.temp/
+supabase/.branches/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+.vite/
+
+# Local system and editor state
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+__pycache__/
+*.pyc
