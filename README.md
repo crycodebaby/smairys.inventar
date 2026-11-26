@@ -26,6 +26,7 @@ Das Repository enthält eine React-Web-App mit Anmeldung, Suche, Erfassung und B
 | [docs/ABNAHME.md](docs/ABNAHME.md) | Praktische Abnahmetests |
 | [docs/QUELLEN.md](docs/QUELLEN.md) | Technische Primärquellen |
 | [docs/CHATGPT.md](docs/CHATGPT.md) | Inventarbefehle, MCP, Seitenwerkzeuge und Verbindungsstatus |
+| [docs/MEDIEN-UND-WISSEN.md](docs/MEDIEN-UND-WISSEN.md) | Fotos, Bildanmerkungen, KI-Merkmale, Quellen, Verlauf, Versionen und selektiver Export |
 | [schema.sql](schema.sql) | Schema des lokalen Startkatalogs |
 
 ## Lokale Bestandsdaten

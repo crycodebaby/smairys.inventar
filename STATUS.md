@@ -15,12 +15,16 @@
 
 ## Lokal implementiert und überprüft
 
+- Die Arbeitsoberfläche wurde von Slogans, Einleitung und Fußzeile befreit. Objekt und Notizen stehen in getrennten Touch-Reitern; Konto, Kategorieanlage und selektiver Download liegen hinter bedarfsgesteuerten Menüs. Glass-Flächen haben dezente spektrale Kanten und respektieren reduzierte Transparenz. Die echte Darstellung auf iPhone/iPad ist weiterhin offen.
+- TanStack Query 5.108.4 hält kontogetrennte Online-Caches. Bestätigte Änderungen aktualisieren gezielt die betroffenen Daten; laufende ältere Abfragen werden abgebrochen. Frische Objektdetails werden beim erneuten Öffnen wiederverwendet. Hintergrundaktualisierungen erhalten ungespeicherte Formularentwürfe. Persistenter Offlinebetrieb und laufende geräteübergreifende Echtzeitaktualisierung sind damit noch nicht implementiert.
+- Im Objektmenü kann zwischen Metadaten, Notizen und vorhandenen Links aus Notizen für Text-/JSON-Downloads gewählt werden. HTTP-Links in Notizen sind direkt anklickbar. Originalbilder, Versionen und ZIP-Export setzen die noch zu implementierende Medienablage voraus.
+
 - React-/TypeScript-Web-App mit E-Mail-Anmeldung, Suche mit Seitennavigation, Erfassung/Bearbeitung von Gegenständen, neuen Kategorien mit Farbwahl und bei Erfassung wählbarer Kategorie. Notizen können als Abschrift mit getrennter Interpretation, Zuschreibung und Anheften erfasst werden. Die Mobilansicht wechselt zwischen Liste und Detailbereich.
 - Die Formularoberfläche zeigt Revisionskonflikte und erhält den eigenen Entwurf. Bei bewusster Übernahme eigener Änderungen bleiben andere Serveränderungen erhalten. Bei unklarer Serverbestätigung wird im geöffneten Formular derselbe Auftrag erneut geprüft. Entwürfe bleiben derzeit nur im Arbeitsspeicher; keine Offline-Speicherzusage.
 - Die Anmelderückkehr verwendet im veröffentlichten Build die konfigurierte Live-Adresse und erhält nur authorization_id für OAuth. Fehlerfragmente wie otp_expired werden verständlich angezeigt und aus der Adresszeile entfernt, ohne erfolgreiche Tokenrückgaben zu löschen. Ein neuer Anmeldelink kann angefordert werden.
 - Optionale WebMCP-Seitenwerkzeuge verwenden dieselben Befehlsschemas und die aktuelle Anmeldung. Der Aufruf durch ChatGPT ist noch zu prüfen.
 - Pluginvorlage mit OAuth-MCP-Konfiguration unter plugin.
-- npm run build und fünfzehn automatisierte Tests haben bestanden. Darunter sind signierte/gefälschte Testtokens, MCP-Audience, Wiederholung nach verlorener Antwort, Konfliktauflösung und zwei Formularabläufe in einem simulierten DOM. Der Supabase Security Advisor lieferte bei der erneuten Prüfung keine Hinweise. Die neuen Testabhängigkeiten sind exakt im Lockfile festgehalten.
+- Typprüfung, Produktionsbuild und 23 automatisierte Tests haben bestanden. Hinzugekommen sind gezielte Cache-Invalidierung mit Kontotrennung, Abbruch älterer Abfragen, Wiederverwendung frischer Objektdetails in der echten React-Ansicht, Formularerhalt bei Reiterwechsel/Hintergrundaktualisierung und selektive Exporte. Die UI-Prüfungen verwenden ein simuliertes DOM und ersetzen keine echte Apple-Geräteprüfung. Der Supabase Security Advisor lieferte bei der letzten Prüfung keine Hinweise. Alle Paketversionen sind im Lockfile festgehalten.
 
 ## Projekt und Anfangsbestand
 
@@ -47,5 +51,7 @@
 ## Nächste Arbeitseinheit
 
 Die veröffentlichte Web-App mit einem neuen Link anmelden; die korrigierte Rückkehr zur Live-Domain ist diagnostisch bestätigt. Einen Gegenstand mit Kategorie und Notiz auf zwei Geräten erfassen/zurücklesen. Anschließend private Fotos und Belege integrieren; OAuth kann parallel freigeschaltet und getestet werden. Danach folgt der persistente Offline-Durchstich. Die Reihenfolge und Erfolgskriterien stehen in docs/ROADMAP.md.
+
+Der Nutzer hat den Produktkern konkretisiert: mehrere Fotos pro Objekt, Upload-Verlauf mit Benutzer/Zeit, eigene Bildanmerkungen, belegte KI-Merkmale, schnell erfassbare Quellen und Vergleichsverkäufe, unveränderte Originale mit OCR-/PDF-/Zeichnungsableitungen sowie selektive Downloads. Zielmodell, Grenzen und Abnahmereihenfolge stehen in docs/MEDIEN-UND-WISSEN.md. Diese Medien- und Wissensfunktionen sind noch nicht als Datenbank/Storage umgesetzt.
 
 Status eines Tests wird als offen, bestanden oder fehlgeschlagen geführt. Eine Dokumentationsprüfung gilt als Quellenbeleg. Ein Gerätetest braucht ein protokolliertes Ergebnis auf dem benannten Gerät.

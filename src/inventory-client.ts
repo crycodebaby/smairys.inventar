@@ -25,8 +25,8 @@ export type Note = z.output<typeof noteSchema>;
 export type ItemDraft = Pick<Item, 'title' | 'brand' | 'model' | 'location' | 'description'>;
 export type CommandInput<N extends CommandName> = z.input<(typeof commandSchemas)[N]>;
 export type CommandResult<N extends CommandName> = z.output<(typeof resultSchemas)[N]>;
-export type InventoryApi = <N extends CommandName>(name: N, input: CommandInput<N>) => Promise<CommandResult<N>>;
-export type CommandTransport = (name: CommandName, input: unknown) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
+export type InventoryApi = <N extends CommandName>(name: N, input: CommandInput<N>, options?: { signal?: AbortSignal }) => Promise<CommandResult<N>>;
+export type CommandTransport = (name: CommandName, input: unknown, signal?: AbortSignal) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
 
 export class InventoryError extends Error {
   uncertain: boolean;
@@ -45,11 +45,11 @@ function explainError(code?: string) {
 }
 
 export function createInventoryApi(transport: CommandTransport): InventoryApi {
-  return async <N extends CommandName>(name: N, input: CommandInput<N>): Promise<CommandResult<N>> => {
+  return async <N extends CommandName>(name: N, input: CommandInput<N>, options?: { signal?: AbortSignal }): Promise<CommandResult<N>> => {
     const parsed = commandSchemas[name].safeParse(input);
     if (!parsed.success) throw new InventoryError('Bitte prüfe die Pflichtfelder und Textlängen.');
     let response: Awaited<ReturnType<CommandTransport>>;
-    try { response = await transport(name, parsed.data); }
+    try { response = await transport(name, parsed.data, options?.signal); }
     catch { throw new InventoryError('Keine eindeutige Serverbestätigung. Wiederhole denselben Auftrag über „Erneut prüfen“.', true); }
     if (response.error) throw new InventoryError(response.error.code ? explainError(response.error.code) : 'Keine eindeutige Serverbestätigung. Bitte erneut prüfen.', !response.error.code);
     const conflict = z.object({ error: z.literal('REVISION_CONFLICT'), current: itemSchema }).safeParse(response.data);

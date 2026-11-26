@@ -8,7 +8,9 @@ React/TypeScript mit Vite, Supabase Free und Vercel sind eingerichtet. Versionie
 
 Die erste Formularoberfläche hält bei Konflikten Eingabe und Serverfassung getrennt. Eine bewusste Übernahme der eigenen Änderungen erhält andere, unveränderte Felder aus der aktuellen Serverfassung. Ein unbestätigter Auftrag wird nur mit ursprünglicher UUID und Nutzlast wiederholt. Die hierfür gehaltene Warteschlange ist noch nicht persistent. Das ist ein vorbereiteter Online-Vertrag und kein Nachweis für Offline-Synchronisation.
 
-Vitest ist derzeit nicht erforderlich: Node test prüft Fachlogik und HTTP/MCP, React Testing Library mit jsdom prüft zwei kritische Formularabläufe. Vite transformiert TSX auch für diese Tests. Echte Browser-, Authentifizierungs- und Apple-Gerätetests bleiben zusätzlich nötig.
+Vitest ist derzeit nicht erforderlich: Node test prüft Fachlogik und HTTP/MCP, React Testing Library mit jsdom prüft kritische Formular- und Cache-Abläufe. Vite transformiert TSX auch für diese Tests. Echte Browser-, Authentifizierungs- und Apple-Gerätetests bleiben zusätzlich nötig.
+
+TanStack Query 5.108.4 ersetzt den pauschalen Refresh-Zähler durch kontogetrennte, kurzlebige Lesecaches mit gezielten Schlüsseln. Schreibantworten werden nach Bestätigung übernommen; betroffene laufende Abfragen werden zuvor abgebrochen. Notizänderungen invalidieren ihren Gegenstand, Kategorien ihren Typ, Objektänderungen die Objektlisten. Frische Daten werden wiederverwendet, veraltete bei Fokus/Wiederverbindung aktualisiert. Entwürfe bleiben außerhalb des Lesecaches und werden durch Refetches nicht überschrieben. Das ist noch keine persistente Offline-Datenhaltung und keine laufende Echtzeitübertragung zwischen Geräten. Der Medien-/Wissensvertrag steht in MEDIEN-UND-WISSEN.md.
 
 ## Verbindliche Nutzerentscheidung
 

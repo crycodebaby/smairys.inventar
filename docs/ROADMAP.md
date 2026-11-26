@@ -14,6 +14,10 @@ Stand 26. November 2026. Die vorhandene Online-Basis trägt den ersten Inventara
 
 Suche mit Seitennavigation, Gegenstand erfassen und bearbeiten, Kategorie mit Farbwahl neu anlegen und bei Erfassung zuordnen, Notizen mit Abschrift/Interpretation/Zuschreibung/Anheften. Änderungen verwenden dieselben vorhandenen Serverbefehle wie MCP. Bei Revisionskonflikten bleibt die Eingabe erhalten; bei unklarer Serverbestätigung wird im geöffneten Formular derselbe Auftrag wiederholt.
 
+Die Arbeitsoberfläche wird ohne Slogans und Einleitungstexte geführt. Objekt und Notizen sind getrennte Reiter; Konto, Kategorien und selektiver Text-/JSON-Download liegen hinter bedarfsgesteuerten Menüs. Der Online-Lesecache verwendet TanStack Query mit gezielter Aktualisierung nach bestätigten Änderungen.
+
+Der nächste Produktkern ist in MEDIEN-UND-WISSEN.md festgelegt: Objekt mit Galerie und Upload-Verlauf, direkt an Medien verknüpfbare Anmerkungen, belegte Merkmale mit menschlicher/KI-Herkunft sowie Quellen und getrennten Preisarten. Zuerst den Fotoablauf vollständig abnehmen, danach Quellen-/Vergleichseingabe und persönliche KI-Bildübergabe. OCR-PDFs, korrigierte Abschriften und Neuzeichnungen folgen auf dieser versionsfähigen Medienbasis.
+
 Umbenennen oder Archivieren von Kategorien, spätere Kategorieänderungen am Gegenstand, frei zuweisbare Zustände und Markierungen sowie Bearbeiten/Löschen/Wiederherstellen von Notizen sind weitere Änderungen am Daten- und Befehlsvertrag. Die momentane Oberfläche stellt dafür keine funktionslosen Bedienelemente dar.
 
 ## Technische Grenzen

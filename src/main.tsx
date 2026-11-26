@@ -89,12 +89,11 @@ function App() {
   }
 
   return <div className="shell">
-    <header><a href="/" className="brand">smairys<span>.inventar</span></a><span className="header-caption">Musik & Lothars Erbe</span></header>
-    <main className={session && !authorizationId ? 'workspace-main' : undefined}>
-      <div className="intro"><span className="eyebrow">Deine Sammlung</span><h1>{authorizationId ? 'Mit ChatGPT verbinden.' : 'Alles hat eine Geschichte.'}</h1><p>Instrumente, Bauteile und Lothars Notizen an einem Ort.</p></div>
+    <header><a href="/" className="brand">smairys<span>.inventar</span></a></header>
+    <main className={session && !authorizationId ? 'workspace-main' : 'access-main'}>
       <section className="glass" aria-label="Inventarzugang">
         {!supabase ? <><h2>Verbindung vorbereiten</h2><p>Supabase-URL und Publishable Key in der Umgebung hinterlegen, um die Anmeldung zu starten.</p></> : loading ? <p role="status">Verbindung wird geprüft …</p> : !session ? <>
-          <h2>Dein Inventar öffnen</h2><p>Melde dich mit deiner E-Mail-Adresse an.</p>
+          <h1 className="access-title">Anmelden</h1>
           <form onSubmit={login}><label htmlFor="email">E-Mail-Adresse</label><input id="email" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required disabled={busy || codeSent} placeholder="name@beispiel.de" />
             {codeSent && <><label htmlFor="code">Anmeldecode</label><input id="code" autoComplete="one-time-code" inputMode="numeric" value={code} onChange={event => setCode(event.target.value)} required /></>}
             <button disabled={busy} type="submit">{busy ? 'Einen Moment …' : codeSent ? 'Anmelden' : 'Anmeldelink senden'}</button>
@@ -110,7 +109,6 @@ function App() {
         {error && <p role="alert" className="error">{error}</p>}
       </section>
     </main>
-    <footer>Originale bewahren. Zusammenhänge verstehen.</footer>
   </div>;
 }
 
