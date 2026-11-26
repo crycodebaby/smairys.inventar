@@ -1,6 +1,14 @@
 # Architekturprüfung
 
-Stand 26. November 2026. Status ist vorgeschlagen. Produktziele stehen in ../PROJEKT.md, Ausführung und offene Punkte in ../STATUS.md. Quellenkennungen verweisen auf QUELLEN.md.
+Stand 26. November 2026. Die Online-Basis ist implementiert; Offline- und Fototransportvarianten sind weiterhin Vorschläge. Produktziele stehen in ../PROJEKT.md, Ausführung und offene Punkte in ../STATUS.md. Quellenkennungen verweisen auf QUELLEN.md.
+
+## Implementierte Online-Basis
+
+React/TypeScript mit Vite, Supabase Free und Vercel sind eingerichtet. Versionierte PostgreSQL-Migrationen definieren die Eigentümergrenzen und begrenzten Inventarbefehle. Schreibaufträge tragen eine operation_id; Updates prüfen die gelesene Revision. Der Browser verwendet dieselben Befehle wie MCP. Der angemeldete Inventarbereich wird bei Bedarf geladen und bei Kontowechsel neu aufgebaut; die Zugriffstokens bleiben an das zugehörige Konto gebunden.
+
+Die erste Formularoberfläche hält bei Konflikten Eingabe und Serverfassung getrennt. Eine bewusste Übernahme der eigenen Änderungen erhält andere, unveränderte Felder aus der aktuellen Serverfassung. Ein unbestätigter Auftrag wird nur mit ursprünglicher UUID und Nutzlast wiederholt. Die hierfür gehaltene Warteschlange ist noch nicht persistent. Das ist ein vorbereiteter Online-Vertrag und kein Nachweis für Offline-Synchronisation.
+
+Vitest ist derzeit nicht erforderlich: Node test prüft Fachlogik und HTTP/MCP, React Testing Library mit jsdom prüft zwei kritische Formularabläufe. Vite transformiert TSX auch für diese Tests. Echte Browser-, Authentifizierungs- und Apple-Gerätetests bleiben zusätzlich nötig.
 
 ## Verbindliche Nutzerentscheidung
 

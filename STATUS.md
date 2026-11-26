@@ -15,10 +15,12 @@
 
 ## Lokal implementiert und überprüft
 
-- React-/TypeScript-Web-App mit E-Mail-Anmeldung, Inventarliste und OAuth-Zustimmungsansicht im Liquid-Glass-Stil.
+- React-/TypeScript-Web-App mit E-Mail-Anmeldung, Suche mit Seitennavigation, Erfassung/Bearbeitung von Gegenständen, neuen Kategorien mit Farbwahl und bei Erfassung wählbarer Kategorie. Notizen können als Abschrift mit getrennter Interpretation, Zuschreibung und Anheften erfasst werden. Die Mobilansicht wechselt zwischen Liste und Detailbereich.
+- Die Formularoberfläche zeigt Revisionskonflikte und erhält den eigenen Entwurf. Bei bewusster Übernahme eigener Änderungen bleiben andere Serveränderungen erhalten. Bei unklarer Serverbestätigung wird im geöffneten Formular derselbe Auftrag erneut geprüft. Entwürfe bleiben derzeit nur im Arbeitsspeicher; keine Offline-Speicherzusage.
+- Die Anmelderückkehr verwendet im veröffentlichten Build die konfigurierte Live-Adresse und erhält nur authorization_id für OAuth. Fehlerfragmente wie otp_expired werden verständlich angezeigt und aus der Adresszeile entfernt, ohne erfolgreiche Tokenrückgaben zu löschen. Ein neuer Anmeldelink kann angefordert werden.
 - Optionale WebMCP-Seitenwerkzeuge verwenden dieselben Befehlsschemas und die aktuelle Anmeldung. Der Aufruf durch ChatGPT ist noch zu prüfen.
 - Pluginvorlage mit OAuth-MCP-Konfiguration unter plugin.
-- npm run build und sieben automatisierte Tests haben bestanden. Darunter sind Tests mit signierten und gefälschten Testtokens und der zusätzlichen MCP-Audience.
+- npm run build und fünfzehn automatisierte Tests haben bestanden. Darunter sind signierte/gefälschte Testtokens, MCP-Audience, Wiederholung nach verlorener Antwort, Konfliktauflösung und zwei Formularabläufe in einem simulierten DOM. Der Supabase Security Advisor lieferte bei der erneuten Prüfung keine Hinweise. Die neuen Testabhängigkeiten sind exakt im Lockfile festgehalten.
 
 ## Projekt und Anfangsbestand
 
@@ -33,6 +35,8 @@
 ## Offen
 
 - Gerenderte Browser- und Geräteprüfung, echte Benutzeranmeldung, kompletter OAuth-Durchlauf, persönliche Installation in ChatGPT, Foto-Uploads, Datenabgleich und Offlinebetrieb sind offen.
+- Der Nutzer meldete eine zugestellte Anmelde-E-Mail, deren Link zu localhost:3000 mit otp_expired führte. Er hat anschließend Site URL https://inventar.smairys.de und Redirect-Freigabe https://inventar.smairys.de/** im Dashboard gespeichert. Ein vollständiger Login mit einem danach frisch angeforderten, einmalig verwendeten Link ist weiterhin nachzuweisen. Die Supabase-Anbindung stellt keine Änderung der Auth-Konfiguration bereit; die lokale Browseranbindung ist derzeit nicht erreichbar.
+- Die neue Rückkehrkonfiguration wurde anschließend ohne echte Zugangstokens geprüft: Zwei absichtlich ungültige Verifikationsaufrufe lieferten HTTP 303 zur Live-Domain, einmal über die Site URL und einmal mit erhaltener authorization_id. otp_expired ist bei diesen synthetischen Diagnoseaufrufen das erwartete Ergebnis und kein gescheiterter echter Benutzerlogin.
 - Supabase Free ist festgelegt. Die Auswahl eines zusätzlichen Offline-Abgleichs sowie Fotovolumen und Gerätetests stehen aus.
 - Der Supabase-OAuth-Server meldete bei der letzten öffentlichen Prüfung feature_disabled. Die vorhandene Token-Hook-Funktion muss in den Auth-Einstellungen ausgewählt werden.
 - Der Nutzer hat das bestehende Projekt bestätigt. Auch der neu verbundene Supabase-Zugang hat Zugriff auf das Projekt. Die letzte Chrome-Prüfung wurde durch Escape abgebrochen; ein weiterhin fehlender Dashboardzugriff ist deshalb nicht bestätigt.
@@ -42,6 +46,6 @@
 
 ## Nächste Arbeitseinheit
 
-Die veröffentlichte Web-App im Browser anmelden. Danach OAuth-Server, Zustimmungsseite und Token Hook verbinden und die persönliche ChatGPT-Verbindung testen. Hosting-Werte stehen in docs/DEPLOYMENT.md, OAuth-Werte und Nachweise in docs/CHATGPT.md. Der spätere Offline-/Fotodurchstich bleibt in docs/ABNAHME.md beschrieben.
+Die veröffentlichte Web-App mit einem neuen Link anmelden; die korrigierte Rückkehr zur Live-Domain ist diagnostisch bestätigt. Einen Gegenstand mit Kategorie und Notiz auf zwei Geräten erfassen/zurücklesen. Anschließend private Fotos und Belege integrieren; OAuth kann parallel freigeschaltet und getestet werden. Danach folgt der persistente Offline-Durchstich. Die Reihenfolge und Erfolgskriterien stehen in docs/ROADMAP.md.
 
 Status eines Tests wird als offen, bestanden oder fehlgeschlagen geführt. Eine Dokumentationsprüfung gilt als Quellenbeleg. Ein Gerätetest braucht ein protokolliertes Ergebnis auf dem benannten Gerät.

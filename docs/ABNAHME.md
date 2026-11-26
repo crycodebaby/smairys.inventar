@@ -1,6 +1,6 @@
 # Nachweise für den technischen Durchstich
 
-Stand 26. November 2026. Die folgenden Geräte- und End-to-End-Tests sind offen. Automatisierte Vorprüfungen für Eingaben, Authentifizierung, MCP, Idempotenz und Kontotrennung haben bestanden. Ihre Grenzen stehen in CHATGPT.md und ../STATUS.md.
+Stand 26. November 2026. Die folgenden Geräte- und End-to-End-Tests sind offen. Automatisierte Vorprüfungen für Eingaben, Authentifizierung, MCP, Idempotenz und Kontotrennung haben bestanden. Hinzu kommen Formularprüfungen mit React Testing Library/jsdom: verlorene Serverantwort mit identischer Wiederholung sowie Revisionskonflikt mit erhaltener eigener Eingabe und unveränderten anderen Serverfeldern. Diese Tests verwenden simulierte Antworten und ersetzen keine echte Anmeldung oder Geräteprüfung. Ihre Grenzen stehen in CHATGPT.md und ../STATUS.md.
 
 Für jeden Durchlauf werden App-Version, Abhängigkeiten aus dem Lockfile, Gerät, Betriebssystem, Browser beziehungsweise Homescreen-App, Datum, Schritte, Ergebnis und relevante anonymisierte Logs erfasst. Die Testdaten bilden einen Gegenstand, eine Notiz und ein Foto ab. Die vorhandenen 18 Fotos liefern zusätzlich einen kleinen Importbestand. Grenzfälle brauchen weitere geeignete Testdateien.
 

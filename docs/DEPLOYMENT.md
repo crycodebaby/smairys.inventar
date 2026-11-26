@@ -24,6 +24,8 @@ Am 26. November 2026 bestätigte Vercel die bestehende Domain mit verified=true,
 
 Die Auth Site URL lautet https://inventar.smairys.de. Die erlaubte Anmelderückkehr muss auch den authorization_id-Parameter der OAuth-Zustimmung erhalten. OAuth-Server, Authorization Path / und public.inventory_access_token_hook werden nach docs/CHATGPT.md eingerichtet. Die Dashboard-Anmeldung ist vom Benutzerkonto innerhalb der Web-App getrennt.
 
+Der Nutzer hat die Live Site URL und die zusätzliche Freigabe https://inventar.smairys.de/** am 26. November 2026 gespeichert, nachdem ein älterer E-Mail-Link zu localhost:3000 mit otp_expired zurückführte. Nach Änderungen einen frischen Link anfordern und ausschließlich die neueste E-Mail verwenden. Eine URL-Korrektur macht einen bereits verbrauchten oder abgelaufenen Link nicht wieder gültig. Standardvorlagen verwenden {{ .ConfirmationURL }} als Linkziel; ein direkt auf die Site URL gesetzter E-Mail-Link überspringt die Verifikation. Ein Anmeldecode wird nur dann mitgesendet, wenn die E-Mail-Vorlage {{ .Token }} enthält.
+
 ## Nachweise
 
 Aktueller Deployment-, Domain- und Anmeldestatus stehen in STATUS.md. Foto-Uploads und Offlinebetrieb sind eigene Arbeitspakete und nicht Bestandteil des ersten Web-Hostings.

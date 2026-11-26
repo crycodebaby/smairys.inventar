@@ -15,6 +15,7 @@ Lies zuerst STATUS.md und PROJEKT.md. Lade weitere Dokumente passend zur Aufgabe
 | Umsetzung oder Überprüfung eines Ablaufs | docs/ABNAHME.md |
 | ChatGPT, MCP, OAuth oder Seitenwerkzeuge | docs/CHATGPT.md |
 | Web-Hosting, Vercel, Domain oder Build-Umgebung | docs/DEPLOYMENT.md |
+| Nächste Umsetzung und Abnahmereihenfolge | docs/ROADMAP.md |
 | Begründung externer technischer Aussagen | docs/QUELLEN.md |
 
 STATUS.md beschreibt den tatsächlichen Stand. Architekturentscheidungen enthalten ihren Status und ihre Änderungskriterien. PROJEKT.md enthält die Produktanforderungen. schema.sql beschreibt ausschließlich den bestehenden SQLite-Startkatalog. Während der Cloud-Umsetzung werden versionierte Migrationen die maßgebliche Quelle für das Serverschema.
