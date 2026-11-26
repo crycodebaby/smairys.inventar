@@ -8,7 +8,7 @@
 
 - Supabase-Projekt xywnhifzahwcmclrfsil ist aktiv. Die Migrationen 20261125234917 und 20261125235513 sind angewendet.
 - Supabase-Migration 20261126025826 ist angewendet. Der Medienbucket ist privat, die Metadatentabelle nutzt RLS. Ein SQL-Test mit Rollback prüft Reservierung, fehlende Uploads, Wiederholung, Eigentümergrenzen und den Ausschluss delegierter Textclients. Der Chromium-Test simuliert eine unterbrochene TUS-Übertragung samt Wiederaufnahme.
-- Supabase-Migration 20261126080622 ist angewendet. Der produktionseigene Benutzer mit Einmalsitzung hat den lesenden SQL-Test bestanden. Das separate Abschalten der Supabase-Neuregistrierung ist weiterhin offen.
+- Supabase-Migration 20261126080622 ist angewendet. Der produktionseigene Benutzer mit Einmalsitzung hat den lesenden SQL-Test bestanden. Die erneute Live-Prüfung der Auth-Einstellungen bestätigt deaktivierte Neuregistrierung, aktive E-Mail-Anmeldung und deaktivierten Apple-Anbieter.
 - Supabase-Migration 20261126084200 verlangt zusätzlich die bestehende Sitzungs-ID. SQL-Regressionen prüfen widerrufene Sitzungen bei Inventar, Medienmetadaten und Anhängen. Der Chromium-Vergleich senkt die zusätzlichen Listenabfragen im Medienablauf von fünf auf null. Die Wiederkehr zum Medienreiter nutzt bereits geladene Vorschauen aus dem begrenzten Arbeitsspeicher. Messbedingungen stehen in [docs/OFFLINE-UND-LAST.md](docs/OFFLINE-UND-LAST.md).
 - Die Edge Function inventory stellt HTTP-Befehle und einen OAuth-geschützten MCP-Adapter bereit. Sie prüft Benutzeranmeldung, für MCP zusätzlich Client-ID und Ressourcen-Audience.
 - Sieben Befehle unterstützen Suche, Detailabruf, Bezeichnungen auflisten, Gegenstand erfassen, revisionsgeschützt ändern, Notiz anheften und eigene Bezeichnung erstellen.
