@@ -455,3 +455,28 @@ dd { margin: 4px 0 0; font-size: 1rem; overflow-wrap: anywhere; }
   .item-row[aria-pressed="true"], .detail-tabs button[aria-selected="true"] { border-color: Highlight; }
   .search-icon::after { background: ButtonText; }
 }
+
+.media-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 16px; }
+.media-picker { position: relative; margin: 0; }
+.media-picker span, .media-download {
+  display: inline-flex; align-items: center; min-height: 46px; padding: 10px 15px;
+  border: 1px solid #a9c5ef68; border-radius: 14px; background: #2a3551; color: var(--text); font-weight: 640;
+}
+.media-picker :focus-visible + span { outline: 2px solid var(--focus); outline-offset: 3px; }
+.media-picker :disabled + span { opacity: .56; }
+.media-picker input:not(:disabled) + span { cursor: pointer; }
+.media-transfer { display: grid; gap: 8px; margin: 0 0 16px; padding: 12px; background: var(--field); border: 1px solid var(--line); border-radius: 14px; }
+.media-transfer p { margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
+.media-transfer > button { justify-self: start; }
+.media-transfer progress { width: 100%; accent-color: var(--focus); }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(126px, 100%), 1fr)); gap: 10px; padding: 0; margin: 0; list-style: none; }
+.media-grid li { min-width: 0; display: flex; }
+.media-card { display: grid; grid-template-rows: auto 1fr; width: 100%; padding: 0; overflow: hidden; text-align: start; }
+.media-thumb { display: grid; place-items: center; aspect-ratio: 4 / 3; background: #121621; font-size: .875rem; color: var(--muted); }
+.media-thumb { position: relative; }
+.media-thumb img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.media-caption { display: grid; align-content: start; gap: 4px; padding: 9px 10px; overflow-wrap: anywhere; font-size: .875rem; }
+.media-caption time { color: var(--muted); font-size: .8125rem; }
+.media-viewer { inline-size: min(58rem, calc(100% - 24px)); }
+.media-viewer .settings-heading { margin-bottom: 12px; }
+.media-original { display: block; max-width: 100%; max-height: 61dvh; margin: 0 auto 12px; border-radius: 10px; object-fit: contain; }

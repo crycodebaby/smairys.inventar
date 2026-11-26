@@ -1,11 +1,13 @@
-import { useEffect, useId, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useState } from 'react';
 import type { FormEvent } from 'react';
 import { changedFields, draftKeys, itemDraft, rebaseDraft, RevisionConflict } from './inventory-client.ts';
 import type { InventoryApi, Item, ItemDraft, Label, Note } from './inventory-client.ts';
 import { useInventoryWrite } from './use-inventory-write.ts';
 import { ObjectActions } from './ObjectActions.tsx';
 import { noteLinks } from './object-export.ts';
+import type { MediaApi } from './inventory-media.ts';
 
+const ItemMedia = lazy(() => import('./ItemMedia.tsx'));
 const fieldLabels: Record<keyof ItemDraft, string> = { title: 'Bezeichnung', brand: 'Marke', model: 'Typ / Modell', description: 'Beschreibung' };
 
 export function ItemFields({ value, onChange, disabled }: { value: ItemDraft; onChange: (value: ItemDraft) => void; disabled: boolean }) {
@@ -40,18 +42,23 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
   </section>;
 }
 
-export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload }: {
+export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload, media }: {
   api: InventoryApi; initial: Item; notes: Note[]; labels: Label[]; onSaved: (item: Item) => void;
   onNote: (note: Note) => void; onProtected: (value: boolean) => void; refreshAvailable: boolean; onReload?: () => void;
+  media?: { api: MediaApi; owner: string; email?: string; online: boolean };
 }) {
   const [base, setBase] = useState(initial);
   const [draft, setDraft] = useState(() => itemDraft(initial));
   const [noteProtected, setNoteProtected] = useState(false);
-  const [tab, setTab] = useState<'object' | 'notes'>('object');
+  const [mediaProtected, setMediaProtected] = useState(false);
+  const [tab, setTab] = useState<'object' | 'notes' | 'media'>('object');
+  const [mediaVisited, setMediaVisited] = useState(false);
+  const tabs = media ? ['object', 'media', 'notes'] as const : ['object', 'notes'] as const;
+  const selectTab = (next: typeof tab) => { setTab(next); if (next === 'media') setMediaVisited(true); };
   const tabId = useId();
   const write = useInventoryWrite(api, 'update_item');
   const dirty = Object.keys(changedFields(itemDraft(base), draft)).length > 0;
-  const protectedWork = (!write.queued && (dirty || write.locked)) || noteProtected;
+  const protectedWork = (!write.queued && (dirty || write.locked)) || noteProtected || mediaProtected;
   useEffect(() => { onProtected(protectedWork); return () => onProtected(false); }, [protectedWork, onProtected]);
   useEffect(() => {
     if (!protectedWork && !write.queued && initial.revision > base.revision) { setBase(initial); setDraft(itemDraft(initial)); }
@@ -66,11 +73,13 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload}/></div>
     {(refreshAvailable || initial.revision > base.revision) && protectedWork && <p role="status" className="notice">Neue Fassung verfügbar. Deine Eingaben bleiben erhalten.</p>}
     {base.category_id && <p className="muted">Kategorie: {labels.find(label => label.id === base.category_id)?.name ?? 'Nicht geladen'}</p>}
-    <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{(['object', 'notes'] as const).map(value => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => {
+    <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{tabs.map((value, index) => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault(); const next = event.key === 'Home' ? 'object' : event.key === 'End' ? 'notes' : value === 'object' ? 'notes' : 'object';
-      setTab(next); document.getElementById(`${tabId}-${next}`)?.focus();
-    }}>{value === 'object' ? 'Objekt' : `Notizen${notes.length ? ` · ${notes.length}` : ''}`}</button>)}</div>
+      event.preventDefault();
+      const step = event.key === 'ArrowLeft' ? -1 : 1;
+      const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + step + tabs.length) % tabs.length];
+      selectTab(next); document.getElementById(`${tabId}-${next}`)?.focus();
+    }}>{value === 'object' ? 'Objekt' : value === 'media' ? 'Medien' : `Notizen${notes.length ? ` · ${notes.length}` : ''}`}</button>)}</div>
     <div role="tabpanel" id={`${tabId}-object-panel`} aria-labelledby={`${tabId}-object`} hidden={tab !== 'object'}>
     <form onSubmit={save} className="editor-form"><fieldset disabled={write.locked} className="field-grid"><legend className="sr-only">Angaben zum Gegenstand</legend><ItemFields value={draft} onChange={setDraft} disabled={write.locked} /></fieldset>
       {write.error && <p role="alert" className="error">{write.error.message}</p>}
@@ -81,6 +90,9 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
       <p className="muted save-status" data-phase={write.busy ? 'working' : write.queued ? 'queued' : undefined} role="status"><span aria-hidden="true"/>{write.busy ? 'Wird gespeichert …' : write.queued ? 'Lokal gespeichert · ausstehend' : write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
     </form>
     </div>
+    {media && <div role="tabpanel" id={`${tabId}-media-panel`} aria-labelledby={`${tabId}-media`} hidden={tab !== 'media'}>
+      {mediaVisited && <Suspense fallback={<p className="muted" role="status">Laden …</p>}><ItemMedia {...media} itemId={base.id} active={tab === 'media'} onProtected={setMediaProtected}/></Suspense>}
+    </div>}
     <div role="tabpanel" id={`${tabId}-notes-panel`} aria-labelledby={`${tabId}-notes`} hidden={tab !== 'notes'} className="notes-section">{notes.length ? <ul className="notes-list">{notes.map(note => <li key={note.id}><div className="section-header"><h4>{note.title}</h4>{note.pinned && <span className="badge">Angeheftet</span>}</div>{note.verbatim_text && <><span className="eyebrow">Abschrift</span><p className="preserve-space">{note.verbatim_text}</p></>}{note.interpretation && <><span className="eyebrow">Einordnung</span><p className="preserve-space">{note.interpretation}</p></>}{noteLinks([note]).map(link => <a className="source-link" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{new URL(link.url).hostname} ↗</a>)}<span className="muted">{note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}</span></li>)}</ul> : null}
       <NewNote api={api} item={base} onCreated={onNote} onProtected={setNoteProtected} />
     </div>

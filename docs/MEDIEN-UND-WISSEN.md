@@ -1,6 +1,6 @@
 # Objekte, Medien und Wissen
 
-Stand 26. November 2026. Dies ist der beschlossene Zielvertrag für die nächste Ausbaustufe. Die aktuelle Datenbank enthält Gegenstände, Kategorien, Gegenstandsnotizen und Befehlsprotokoll. Uploads, Bildnotizen, Merkmalsbelege, Quellen-/Preisdatensätze und Verarbeitungsversionen sind noch nicht implementiert. Der aktuelle Text-/JSON-Export umfasst nur vorhandene Objektangaben, Notizen und daraus erkannte HTTP-Links.
+Stand 26. November 2026. Der erste Medienablauf erfasst private Fotos und PDF-Belege am Gegenstand, zeigt JPEG-Vorschauen und stellt die Originale zum Download bereit. Der folgende Zielvertrag beschreibt auch Bildnotizen, Merkmalsbelege, weitere Versionen und Quellen-/Preisdatensätze. Der Text-/JSON-Export umfasst Objektangaben, Notizen und daraus erkannte HTTP-Links.
 
 ## Produktkern
 
@@ -19,15 +19,17 @@ Neue Felddefinitionen sollen als Daten erweiterbar werden. Begriffe und Tags hab
 
 ## Fotos zuerst
 
-Der nächste durchgängige Ablauf ist Objekt öffnen, mehrere Fotos auswählen, bestätigten Upload sehen, Galerie öffnen und eine Aufnahme einem Hinweis zuordnen. Ein Upload zeigt erst nach Datei- und Metadatenbestätigung „hochgeladen“. Dateiauswahl, Aufnahmedatum aus EXIF, Uploadbeginn und bestätigter Upload sind verschiedene Ereignisse. Der sichtbare Verlauf soll beispielsweise „Robin · 26.11.2026, 14:32“ zeigen; die Speicherung verwendet eine eindeutige serverseitige Zeit mit Zeitzonenbezug.
+Im Reiter **Medien** sind bis zu zwölf Dateien je Auswahl möglich. Jede Datei bekommt einen stabilen Medienbezug. Die PostgreSQL-Bestätigung prüft Vorhandensein, Dateigröße und MIME-Typ im Storage und setzt den Uploadzeitpunkt. Das Dateifenster zeigt das angemeldete Konto und den bestätigten Uploadzeitpunkt. Dateiauswahl, EXIF-Aufnahmedatum und bestätigter Upload sind verschiedene Ereignisse. Ein späterer Verlauf und Anmerkungen können auf diesen Medienbezug aufbauen.
 
-Originale liegen privat. Vorschaubilder werden getrennt erzeugt; Darstellbarkeit von HEIC auf den Zielgeräten wird geprüft. Eine fehlende Vorschau darf nicht zur stillen Löschung oder Umwandlung des Originals führen. Wiederholbare Uploadvorhaben, Übertragungsabbruch und fremde Konten gehören zur Abnahme nach DATENVERTRAG.md.
+Originale liegen im privaten Bucket `inventory-media`. RLS erlaubt Dateizugriff beim jeweiligen Eigentümer. Der Browser berechnet SHA-256 für das empfangene Original. Eine zweite Auswahl desselben Inhalts am selben Objekt verwendet denselben Datensatz. Der Server kontrolliert beim Bestätigen Dateigröße und MIME-Typ. JPEG-Vorschauen werden separat erzeugt und haben maximal 720 Pixel Kantenlänge und 256 KiB. Ein PDF erscheint mit Dateityp und Originaldownload. HEIC/HEIF bleibt als Original gespeichert, auch wenn der Browser das Format nicht anzeigen kann.
 
-Automatische Zuordnung erkennt exakte Dateiduplikate über den Hash und schlägt mögliche Objektduplikate anhand lesbarer Modell- und Serienangaben vor. Unsichere Übereinstimmungen werden nicht still zusammengeführt. Eine Seriennummer auf einem eingebauten Lautsprecher ist beispielsweise nicht automatisch die Seriennummer der gesamten Box.
+Die nächste Importstufe verknüpft die 18 geprüften Tubes-Originale mit der Sammlung und dokumentiert die spätere Zuordnung. Exakte Dateiduplikate verwenden den Hash. Mögliche Objektduplikate anhand lesbarer Modell- und Serienangaben werden später zur Prüfung vorgeschlagen. Eine Seriennummer auf einem eingebauten Lautsprecher gehört gegebenenfalls nur zum Lautsprecher.
+
+Bis 6 MiB läuft der Upload als direkter Versuch. Für größere Dateien bis 25 MiB verwendet die App den nachgeladenen `tus-js-client` zur Wiederaufnahme. Nach einem Neustart kann dieselbe Datei erneut ausgewählt werden. Im geöffneten Objekt bleiben pausierte Dateien bis zum Schließen des Editors verfügbar. Die persistente Offline-Dateiwarteschlange und die Wiederaufnahme nach einem Kontowechsel bleiben getrennte Ausbaustufen.
 
 ## KI und OCR
 
-Die bisherige MCP-Schnittstelle liefert Gegenstandsdaten und Texte, keine Bilddateien. Für visuelle Analyse wird ein autorisiertes Werkzeug benötigt, das die ausgewählte Aufnahme dem Modell tatsächlich zugänglich macht. Dateinamen, URLs oder nur für ein Widget bestimmte Metadaten ersetzen diese Bildübergabe nicht. Der vollständige ChatGPT-OAuth-Durchlauf und die tatsächliche visuelle Werkzeugantwort müssen im persönlichen Konto getestet werden.
+Die MCP-Schnittstelle liefert Gegenstandsdaten und Texte. Die private Galerie wird über die direkte App-Anmeldung geöffnet. Für die spätere visuelle Analyse bekommt ein lesendes Werkzeug eine konkrete Medien-ID und liefert eine begrenzte Bildableitung als MCP-Bildinhalt. Das Werkzeug prüft Eigentümer und Berechtigung vor dem Lesen. Die Aufnahme muss im tatsächlichen Chat für das Modell auswertbar sein. Der vollständige OAuth-Durchlauf und eine visuelle Werkzeugantwort sind dafür die Abnahme.
 
 Der KI-Auftrag soll einen lesenden Teil und daraus abgeleitete Vorschläge liefern: Aufdruck, Modell, Farbe, Seriennummer und andere belegbare Merkmale jeweils mit Foto-/Versionsbezug. Maße werden nur aus einer lesbaren Maßangabe oder einem belegbaren Maßstab übernommen. Schätzungen bleiben ausdrücklich als solche getrennt. Widersprechende Lesungen bleiben bis zur Auflösung erhalten. „KI-Vorschlag“, „vom Nutzer geprüft“ und „durch Quelle belegt“ sind verschiedene Zustände. Eine vom Modell erfundene Prozentzahl gilt nicht als gemessene Erkennungssicherheit.
 
@@ -62,7 +64,7 @@ Ein öffentliches Verkaufsangebot bekommt nur bewusst gewählte Inhalte. Private
 
 ## Bedienung
 
-Die Hauptansicht enthält Suche, Objektliste und „+ Objekt“. Das geöffnete Objekt zeigt kompakte Bereiche für Objekt/Merkmale, Bilder, Notizen, Quellen und Verlauf, jeweils erst mit nutzbarer Funktion. Aktuell existieren die Reiter Objekt und Notizen. Großflächige Bilder, einheitliche Abstände und mindestens 44 Pixel hohe Touchziele sind die Vorgabe. Kategorieverwaltung, Konto und Download werden bei Bedarf geöffnet. Bestätigungen sind kurz, Fehler und Revisionskonflikte bleiben verständlich.
+Die Hauptansicht enthält Suche, Objektliste und „+ Objekt“. Aktuell existieren die Reiter Objekt, Medien und Notizen. Quellen und Verlauf erscheinen, sobald ihre Funktionen verfügbar sind. Großflächige Bilder, einheitliche Abstände und mindestens 44 Pixel hohe Touchziele sind die Vorgabe. Kategorieverwaltung, Konto und Download werden bei Bedarf geöffnet. Bestätigungen sind kurz, Fehler und Revisionskonflikte bleiben verständlich.
 
 Keine Werbesätze, biografischen Einleitungen oder erklärenden Slogans in der Arbeitsoberfläche. Glass-Flächen erhalten dezente spektrale Kanten und farbige Reflexe. Leseflächen, Fotodarstellung und Formulare bleiben ruhig; reduzierte Transparenz entfernt die Effekte. Aufwendige dauernde Animationen werden für diesen Effekt nicht benötigt.
 
@@ -73,6 +75,11 @@ TanStack Query 5.108.4 hält die Online-Lesedaten pro Konto und Abfrage. Bestät
 Ungespeicherte Formulare sind vom Lesecache getrennt und werden durch Hintergrundabfragen nicht ersetzt. Bei Kontowechsel wird der Cache im Arbeitsspeicher neu aufgebaut. Die lokale Lesekopie ist nach Konto getrennt und enthält zuletzt geladene Ansichten. Grenzen, Aktualisierung und Offline-Neustart stehen in [OFFLINE-UND-LAST.md](OFFLINE-UND-LAST.md).
 
 ## Primärquellen
+
+- [Supabase, standardisierte und wiederaufnehmbare Uploads](https://supabase.com/docs/guides/storage/uploads/resumable-uploads)
+- [Supabase, Zugriffskontrolle auf private Dateien](https://supabase.com/docs/guides/storage/security/access-control)
+- [Supabase, Plananforderungen der Bildtransformationen](https://supabase.com/docs/guides/storage/serving/image-transformations)
+- [WebKit, HEIC-Unterstützung in Safari](https://webkit.org/blog/14445/webkit-features-in-safari-17-0/)
 
 - https://help.openai.com/en/articles/8400551-chatgpt-image-inputs-faq
 - https://developers.openai.com/plugins/reference

@@ -19,6 +19,7 @@ import { syncPhase } from './offline-state.ts';
 import type { AccountIdentity } from './offline-state.ts';
 import type { AppShell } from './use-app-shell.ts';
 import { withDeadline } from './request-deadline.ts';
+import { createMediaApi } from './inventory-media.ts';
 
 type Props = { identity: AccountIdentity; session: Session | null; shell: AppShell; projectUrl: string; publicKey: string; onSignOut: () => void };
 type ReadStorage = 'restoring' | 'ready' | 'unavailable';
@@ -63,14 +64,18 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const canRequest = !!session && session.user.id === owner && (!session.expires_at || session.expires_at * 1000 > Date.now());
   const [unreachable, setUnreachable] = useState(false);
   const usingLocalCopy = !connected || !canRequest || unreachable;
-  const api = useMemo<InventoryApi>(() => {
-    const client = createClient(projectUrl, publicKey, { accessToken: async () => {
+  const accessToken = useCallback(async () => {
       const current = latestSession.current;
       if (!accountActive.current || !current || current.user.id !== owner || (current.expires_at && current.expires_at * 1000 <= Date.now())) {
         throw new Error('Anmeldung muss erneuert werden.');
       }
       return current.access_token;
-    } });
+  }, [owner]);
+  const client = useMemo(() => createClient(projectUrl, publicKey, {
+    accessToken, global: { fetch: (input, init) => withDeadline(signal => fetch(input, { ...init, signal }), init?.signal ?? undefined) },
+  }), [projectUrl, publicKey, accessToken]);
+  const mediaApi = useMemo(() => createMediaApi(client, projectUrl, publicKey, accessToken), [client, projectUrl, publicKey, accessToken]);
+  const api = useMemo<InventoryApi>(() => {
     const execute = createInventoryApi(async (name, input, signal) => {
       const request = client.rpc('inventory_command', { command_name: name, arguments: input }).retry(false);
       const { data, error, status } = await withDeadline(async deadline => {
@@ -91,7 +96,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
       }
       return result;
     };
-  }, [projectUrl, publicKey, cache, owner]);
+  }, [client, cache, owner]);
   const outbox = useMemo(() => new InventoryOutbox(owner, api, {
     online: () => {
       const current = latestSession.current;
@@ -240,7 +245,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     </aside>
     {selection && <div className="workspace-detail">
       {selection === 'new' ? <NewItem api={api} labels={labels} onCreated={created} onCancel={() => { setProtectedWork(false); setSelection(null); }} onProtected={protectEditor} />
-        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
+        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} media={{ api: mediaApi, owner, email: identity.email, online: !usingLocalCopy }} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
         : usingLocalCopy ? <p className="state-message" role="status">Dieses Objekt hat noch keine lokale Detailansicht.</p>
         : detail.isPending ? <p className="state-message" role="status">Laden …</p>
         : detail.error ? <div><p role="alert" className="error">{detail.error.message}</p><button className="quiet" onClick={() => void detail.refetch()}>Erneut laden</button></div> : null}

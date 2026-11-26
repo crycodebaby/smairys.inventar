@@ -43,6 +43,17 @@ const secondItem = { ...item, id: secondObjectId, inventory_number: 2, title: 'N
 const notes = [];
 const calls = [];
 const writes = new Map();
+const mediaRecords = new Map();
+const uploadedPaths = new Set();
+const testPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAIAAAUAAen63NgAAAAASUVORK5CYII=', 'base64');
+const expectedMediaHash = Buffer.from(await crypto.subtle.digest('SHA-256', testPng)).toString('hex');
+const largePdf = Buffer.alloc(6 * 1024 * 1024 + 128);
+largePdf.write('%PDF-1.4\n');
+const expectedPdfHash = Buffer.from(await crypto.subtle.digest('SHA-256', largePdf)).toString('hex');
+let tusOffset = 0;
+let tusResumed = false;
+let interruptTus = true;
+const tusChunks = [];
 let simulateOffline = false;
 let serviceUnavailable = false;
 function fixtureSession(id, expired = false) {
@@ -68,6 +79,41 @@ try {
   context.setDefaultNavigationTimeout(25_000);
   const failures = [];
   context.on('page', page => page.on('pageerror', error => failures.push(error.message)));
+  const storageOrigin = new URL(projectOrigin);
+  if (storageOrigin.hostname.endsWith('.supabase.co')) storageOrigin.hostname = storageOrigin.hostname.replace(/\.supabase\.co$/, '.storage.supabase.co');
+  await context.route(storageOrigin.origin + '/storage/v1/upload/resumable**', async route => {
+    const request = route.request();
+    const headers = {
+      'access-control-allow-origin': app, 'access-control-allow-headers': '*',
+      'access-control-allow-methods': 'OPTIONS, POST, PATCH, HEAD',
+      'access-control-expose-headers': 'Location, Tus-Resumable, Upload-Length, Upload-Offset',
+      'tus-resumable': '1.0.0',
+    };
+    if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers }); return; }
+    assert.ok(request.headers().authorization.startsWith('Bearer '));
+    if (request.method() === 'POST') {
+      assert.equal(Number(request.headers()['upload-length']), largePdf.length);
+      await route.fulfill({ status: 201, headers: { ...headers, location: storageOrigin.origin + '/storage/v1/upload/resumable/fixture' } });
+      return;
+    }
+    if (request.method() === 'HEAD') {
+      tusResumed = true;
+      await route.fulfill({ status: 200, headers: { ...headers, 'upload-length': String(largePdf.length), 'upload-offset': String(tusOffset) } });
+      return;
+    }
+    assert.equal(request.method(), 'PATCH');
+    assert.equal(Number(request.headers()['upload-offset']), tusOffset);
+    if (interruptTus && tusOffset > 0) {
+      interruptTus = false;
+      await route.fulfill({ status: 400, headers });
+      return;
+    }
+    const body = request.postDataBuffer();
+    tusOffset += body.length;
+    tusChunks.push(body.length);
+    if (tusOffset === largePdf.length) uploadedPaths.add(mediaRecords.get(expectedPdfHash).original_path);
+    await route.fulfill({ status: 204, headers: { ...headers, 'upload-offset': String(tusOffset) } });
+  });
   await context.route(projectOrigin.origin + '/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -82,6 +128,59 @@ try {
     }
     if (url.pathname === '/auth/v1/logout') { await route.fulfill({ status: 204, headers }); return; }
     if (url.pathname === '/auth/v1/user') { await route.fulfill({ json: fixtureSession(robin).user, headers }); return; }
+    if (url.pathname === '/rest/v1/inventory_media') {
+      assert.equal(url.searchParams.get('item_id'), 'eq.' + objectId);
+      await route.fulfill({ json: [...mediaRecords.values()].filter(file => file.uploaded_at), headers });
+      return;
+    }
+    if (url.pathname === '/rest/v1/rpc/inventory_media_begin') {
+      const { target_item, filename, content_type, content_size, digest } = request.postDataJSON();
+      assert.equal(digest, content_type === 'application/pdf' ? expectedPdfHash : expectedMediaHash);
+      assert.equal(content_size, content_type === 'application/pdf' ? largePdf.length : testPng.length);
+      assert.equal(target_item, objectId);
+      if (!mediaRecords.has(digest)) {
+        const id = crypto.randomUUID();
+        mediaRecords.set(digest, {
+          id, item_id: target_item, owner_id: robin, original_name: filename,
+          mime_type: content_type, byte_count: content_size, sha256: digest,
+          original_path: `${robin}/${id}/original`, preview_path: `${robin}/${id}/preview.jpg`,
+          has_preview: false, uploaded_at: null,
+        });
+      }
+      await route.fulfill({ json: mediaRecords.get(digest), headers });
+      return;
+    }
+    if (url.pathname.startsWith('/storage/v1/object/inventory-media/')) {
+      const path = url.pathname.split('/').slice(5).join('/');
+      assert.equal(request.headers()['x-upsert'], 'false');
+      assert.ok(request.headers().authorization.startsWith('Bearer '));
+      assert.ok(!uploadedPaths.has(path));
+      uploadedPaths.add(path);
+      await route.fulfill({ json: { Key: path }, headers });
+      return;
+    }
+    if (url.pathname === '/rest/v1/rpc/inventory_media_confirm') {
+      const file = [...mediaRecords.values()].find(record => record.id === request.postDataJSON().media_id);
+      if (!uploadedPaths.has(file.original_path)) {
+        await route.fulfill({ status: 400, json: { code: '22023', message: 'MEDIA_FILE_UNCONFIRMED' }, headers });
+        return;
+      }
+      file.uploaded_at = new Date().toISOString();
+      file.has_preview = uploadedPaths.has(file.preview_path);
+      await route.fulfill({ json: file, headers });
+      return;
+    }
+    if (url.pathname === '/storage/v1/object/sign/inventory-media') {
+      const { paths, expiresIn } = request.postDataJSON();
+      assert.equal(expiresIn, 600);
+      await route.fulfill({ json: paths.map(path => ({ path, signedURL: '/object/sign/inventory-media/' + path + '?token=test' })), headers });
+      return;
+    }
+    if (url.pathname.startsWith('/storage/v1/object/sign/inventory-media/')) {
+      if (request.method() === 'GET') await route.fulfill({ body: testPng, contentType: 'image/png', headers });
+      else await route.fulfill({ json: { signedURL: '/object/sign/inventory-media/original?token=test' }, headers });
+      return;
+    }
     assert.equal(url.pathname, '/rest/v1/rpc/inventory_command');
     const { command_name: name, arguments: args } = request.postDataJSON();
     calls.push(name);
@@ -108,6 +207,28 @@ try {
   await page.reload();
   await page.getByRole('button', { name: /Ampeg Offline/ }).click();
   await page.getByRole('heading', { name: 'Ampeg Offline' }).waitFor();
+  await page.getByRole('tab', { name: 'Medien' }).click();
+  await page.getByText('Keine Fotos oder Belege').waitFor();
+  const fileInput = page.getByLabel('Dateien hinzufügen');
+  await fileInput.setInputFiles({ name: 'Typenschild.png', mimeType: 'image/png', buffer: testPng });
+  const mediaCard = page.getByRole('button', { name: /Typenschild.png/ });
+  await mediaCard.waitFor();
+  assert.equal(uploadedPaths.size, 2);
+  await mediaCard.click();
+  await page.getByRole('dialog', { name: 'Typenschild.png' }).getByRole('link', { name: 'Original herunterladen' }).waitFor();
+  await page.getByRole('button', { name: 'Datei schließen' }).click();
+  await fileInput.setInputFiles({ name: 'Kopie.png', mimeType: 'image/png', buffer: testPng });
+  await page.getByRole('tabpanel', { name: 'Medien' }).getByText('Gespeichert', { exact: true }).waitFor();
+  assert.equal(mediaRecords.size, 1);
+  assert.equal(uploadedPaths.size, 2);
+  await fileInput.setInputFiles({ name: 'Beleg.pdf', mimeType: 'application/pdf', buffer: largePdf });
+  await page.getByRole('button', { name: 'Erneut versuchen', exact: true }).click();
+  await page.getByRole('button', { name: /Beleg.pdf/ }).waitFor();
+  assert.equal(tusResumed, true);
+  assert.deepEqual(tusChunks, [6 * 1024 * 1024, 128]);
+  assert.equal(mediaRecords.size, 2);
+  await page.getByRole('tab', { name: 'Objekt' }).click();
+  console.log('Private Medien, Original und Vorschau, Bestätigung, Deduplizierung und TUS-Übertragung geprüft.');
   assert.equal(await page.getByLabel(/Fundort|Lagerort/).count(), 0);
   assert.equal(await page.getByLabel(/Bezeichnung/).evaluate(field => parseFloat(getComputedStyle(field).fontSize) >= 16), true);
   for (const width of [320, 390, 820, 1180]) {
