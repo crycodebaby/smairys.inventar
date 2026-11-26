@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "smairys.inventar",
+  "short_name": "Inventar",
+  "lang": "de",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#111722",
+  "background_color": "#111722",
+  "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

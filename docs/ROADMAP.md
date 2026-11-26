@@ -1,13 +1,13 @@
 # Nächste Arbeitsschritte
 
-Stand 26. November 2026. Die vorhandene Online-Basis trägt den ersten Inventarablauf. Sie ist noch keine abgenommene Offline-App. STATUS.md enthält Nachweise und offene Einschränkungen.
+Stand 26. November 2026. Die App startet nach dem ersten Online-Aufruf offline. Die Geräteabnahme für Safari und die Homescreen-App steht aus. STATUS.md enthält Nachweise und offene Einschränkungen.
 
 | Reihenfolge | Ergebnis | Abnahme |
 | --- | --- | --- |
 | 1 | Anmeldung auf der Live-Domain und direkt bedienbares Inventar | Frischen E-Mail-Link auf inventar.smairys.de öffnen. Einen Gegenstand mit Kategorie erfassen, ändern und eine angeheftete Abschrift mit separater Interpretation ergänzen. Auf zweitem Gerät zurücklesen. |
 | 2 | Private Originalfotos und Belege am Gegenstand | Eigentümerbezogene Storage-Regeln, Dateimetadaten, SHA-256, getrennte Vorschauen und bestätigter Upload. Zweitkonto darf Originale nicht lesen. Reale iPhone-Dateien und Abbruch während des Uploads prüfen. |
 | 3 | Persönliche ChatGPT-Verbindung | OAuth-Server, Zustimmungsseite und Token Hook konfigurieren. Mit echtem Benutzerkonto verbinden; denselben Gegenstand aus ChatGPT lesen und nach ausdrücklichem Auftrag ändern. Dieser Schritt kann parallel zur Fotoarbeit erfolgen. |
-| 4 | Nachgewiesener Offlinebetrieb | Kostenlosen beziehungsweise budgetkonformen Abgleich anhand des engen Befehlsmodells auswählen. Oberflächen-Cache, persistente Entwürfe und Auftragswarteschlange mit Kontozuordnung, Dateiablage, Konfliktbehandlung und Wiederanlauf auf iPhone/iPad testen. |
+| 4 | Nachgewiesener Offlinebetrieb | Oberflächen-Cache, lokale Leseansichten, Speichern im Flugmodus, Auftragswarteschlange und Wiederanlauf auf iPhone/iPad prüfen. Gezielte Offline-Ablage von Objekten und Fotos mit der Fotoanbindung planen. |
 | 5 | Recherche und Verkauf | Belegte Typbestimmung, Quellen, datierte Vergleichsverkäufe und Bewertungen ergänzen. Danach Angebot, Reservierung, Zahlung und Übergabe nachvollziehbar abbilden. |
 
 ## Aktuell implementierter Ausschnitt
@@ -22,4 +22,4 @@ Umbenennen oder Archivieren von Kategorien, spätere Kategorieänderungen am Geg
 
 ## Technische Grenzen
 
-Formularentwürfe und Wiederholungsaufträge liegen aktuell im Arbeitsspeicher des geöffneten Fensters. Eine Warnung vor Verlassen ersetzt keine persistente Offline-Warteschlange. Vollständiger Export einschließlich echter Bilddateien und eine getestete Wiederherstellung gehören zur Foto-/Offline-Abnahme. Ein automatisierter Test in einem simulierten DOM ersetzt keine Geräteprüfung in Safari.
+Formularentwürfe bleiben im geöffneten Fenster. Abgeschickte Aufträge liegen in der kontogetrennten IndexedDB-Warteschlange, sobald die App „Lokal gespeichert“ meldet. Vollständiger Export einschließlich echter Bilddateien und eine getestete Wiederherstellung gehören zur Foto-/Offline-Abnahme. Ein automatisierter Test in einem simulierten DOM ersetzt keine Geräteprüfung in Safari.

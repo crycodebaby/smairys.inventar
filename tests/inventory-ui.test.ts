@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import 'fake-indexeddb/auto';
 import { after, before, test } from 'node:test';
 import { createElement } from 'react';
 import { JSDOM } from 'jsdom';
@@ -114,7 +115,7 @@ test('reopening an object uses the fresh account cache rather than downloading t
   };
   try {
     const session = { access_token: 'fixture-only', user: { id: crypto.randomUUID(), email: 'fixture@example.test' } } as Session;
-    const view = testing.render(createElement(module.default, { session, projectUrl: 'https://fixture.supabase.co', publicKey: 'fixture-only', onSignOut: stableProtection }));
+    const view = testing.render(createElement(module.default, { session, identity: session.user, shell: { phase: 'unavailable', applyUpdate: stableProtection }, projectUrl: 'https://fixture.supabase.co', publicKey: 'fixture-only', onSignOut: stableProtection }));
     testing.fireEvent.click(await view.findByRole('button', { name: /ECC83/ }));
     await view.findByRole('tab', { name: 'Objekt' });
     testing.fireEvent.click(view.getByRole('button', { name: /Zweite Röhre/ }));

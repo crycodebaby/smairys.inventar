@@ -70,7 +70,7 @@ Keine Werbesätze, biografischen Einleitungen oder erklärenden Slogans in der A
 
 TanStack Query 5.108.4 hält die Online-Lesedaten pro Konto und Abfrage. Bestätigte Schreibantworten aktualisieren passende Objekte sofort. Eine Notiz invalidiert ihr Objekt; eine Kategorie invalidiert ihren Kategorietyp; Objektänderungen invalidieren Objektlisten. Alte laufende Abfragen werden vorher abgebrochen. Andere Konten und unabhängige Daten werden nicht pauschal neu geladen. Frische Cache-Daten werden beim Zurückkehren wiederverwendet; veraltete Daten bei Fokus und erneuter Verbindung aktualisiert.
 
-Ungespeicherte Formulare sind vom Lesecache getrennt und werden durch Hintergrundabfragen nicht ersetzt. Bei Kontowechsel wird der zum bisherigen Arbeitsplatz gehörende Cache verworfen. Dieser Cache liegt derzeit nur im Arbeitsspeicher und liefert weder Offline-Persistenz noch eine laufende geräteübergreifende Echtzeitverbindung. Diese beiden Eigenschaften brauchen eigene Umsetzung und Nachweise.
+Ungespeicherte Formulare sind vom Lesecache getrennt und werden durch Hintergrundabfragen nicht ersetzt. Bei Kontowechsel wird der Cache im Arbeitsspeicher neu aufgebaut. Die lokale Lesekopie ist nach Konto getrennt und enthält zuletzt geladene Ansichten. Grenzen, Aktualisierung und Offline-Neustart stehen in [OFFLINE-UND-LAST.md](OFFLINE-UND-LAST.md).
 
 ## Primärquellen
 

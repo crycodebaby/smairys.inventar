@@ -2,6 +2,7 @@ import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 import { InventoryError } from './inventory-client.ts';
 import type { CommandResult, InventoryApi, WriteName, WriteRequest } from './inventory-client.ts';
+import { withDeadline } from './request-deadline.ts';
 
 type Result = CommandResult<WriteName>;
 export type OutboxEntry = {
@@ -29,6 +30,7 @@ export class InventoryOutbox {
   private controller = new AbortController();
   private running?: Promise<void>;
   private listeners = new Set<(entries: OutboxEntry[]) => void>();
+  private activityListeners = new Set<(running: boolean) => void>();
   private rerun = false;
   private failedRefresh?: (reason: unknown) => void;
   private owner: string;
@@ -80,6 +82,11 @@ export class InventoryOutbox {
     return () => { this.listeners.delete(listener); };
   }
 
+  subscribeActivity(listener: (running: boolean) => void) {
+    this.activityListeners.add(listener);
+    return () => { this.activityListeners.delete(listener); };
+  }
+
   async submit<N extends WriteName>(request: WriteRequest<N>, onPersisted: () => void): Promise<CommandResult<N>> {
     if (this.controller.signal.aborted) throw new InventoryError('Anmeldung beendet.');
     const id = this.owner + ':' + request.input.operation_id;
@@ -127,10 +134,11 @@ export class InventoryOutbox {
       }
       // Stop at the first unclear request to keep submission order across reconnects.
       if (!this.online() || entry.retryAt > Date.now()) break;
-      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(12_000)]);
       let result: Result;
       try {
-        result = await this.api(entry.request.name, entry.request.input, { signal, deferListRefresh: true });
+        result = await withDeadline(signal => this.api(entry.request.name, entry.request.input, {
+          signal, deferListRefresh: true,
+        }), this.controller.signal);
       } catch (reason) {
         if (this.controller.signal.aborted) break;
         const failure = reason instanceof Error ? reason : new InventoryError('Serverantwort unklar.', true);
@@ -172,10 +180,12 @@ export class InventoryOutbox {
       }
       await this.publish();
     };
+    for (const listener of this.activityListeners) listener(true);
     this.running = run().catch(reason => {
       if (!this.controller.signal.aborted) this.failedRefresh?.(reason);
     }).finally(() => {
       this.running = undefined;
+      for (const listener of this.activityListeners) listener(false);
       if (this.rerun) { this.rerun = false; void this.flush(); }
     });
     return this.running;

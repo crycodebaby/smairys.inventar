@@ -25,6 +25,9 @@ export type Note = z.output<typeof noteSchema>;
 export type ItemDraft = Pick<Item, 'title' | 'brand' | 'model' | 'location' | 'description'>;
 export type CommandInput<N extends CommandName> = z.input<(typeof commandSchemas)[N]>;
 export type CommandResult<N extends CommandName> = z.output<(typeof resultSchemas)[N]>;
+export function parseInventoryResult<N extends CommandName>(name: N, data: unknown): CommandResult<N> {
+  return resultSchemas[name].parse(data) as CommandResult<N>;
+}
 export type InventoryRequestOptions = { signal?: AbortSignal; deferListRefresh?: boolean };
 export type InventoryApi = <N extends CommandName>(name: N, input: CommandInput<N>, options?: InventoryRequestOptions) => Promise<CommandResult<N>>;
 export type CommandTransport = (name: CommandName, input: unknown, signal?: AbortSignal) => Promise<{ data: unknown; error: { message: string; code?: string } | null; status?: number }>;

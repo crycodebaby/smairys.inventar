@@ -1,20 +1,20 @@
 # Architekturprüfung
 
-Stand 26. November 2026. Die Online-Basis ist implementiert; Offline- und Fototransportvarianten sind weiterhin Vorschläge. Produktziele stehen in ../PROJEKT.md, Ausführung und offene Punkte in ../STATUS.md. Quellenkennungen verweisen auf QUELLEN.md.
+Stand 26. November 2026. Die Online-Basis, der Offline-Start und ein begrenzter lokaler Lesebestand sind implementiert. Die Fotoanbindung bleibt geplant. Produktziele stehen in ../PROJEKT.md, Ausführung und offene Punkte in ../STATUS.md. Quellenkennungen verweisen auf QUELLEN.md.
 
 ## Implementierte Online-Basis
 
 React/TypeScript mit Vite, Supabase Free und Vercel sind eingerichtet. Versionierte PostgreSQL-Migrationen definieren die Eigentümergrenzen und begrenzten Inventarbefehle. Schreibaufträge tragen eine operation_id; Updates prüfen die gelesene Revision. Der Browser verwendet dieselben Befehle wie MCP. Der angemeldete Inventarbereich wird bei Bedarf geladen und bei Kontowechsel neu aufgebaut; die Zugriffstokens bleiben an das zugehörige Konto gebunden.
 
-Die erste Formularoberfläche hält bei Konflikten Eingabe und Serverfassung getrennt. Eine bewusste Übernahme der eigenen Änderungen erhält andere, unveränderte Felder aus der aktuellen Serverfassung. Ein unbestätigter Auftrag wird nur mit ursprünglicher UUID und Nutzlast wiederholt. Die hierfür gehaltene Warteschlange ist noch nicht persistent. Das ist ein vorbereiteter Online-Vertrag und kein Nachweis für Offline-Synchronisation.
+Die erste Formularoberfläche hält bei Konflikten Eingabe und Serverfassung getrennt. Eine bewusste Übernahme der eigenen Änderungen erhält andere, unveränderte Felder aus der aktuellen Serverfassung. Ein unbestätigter Auftrag wird nur mit ursprünglicher UUID und Nutzlast wiederholt. Abgeschickte Aufträge werden kontogetrennt in IndexedDB abgelegt und im Vordergrund synchronisiert. Die geprüften Abläufe und Grenzen stehen in [OFFLINE-UND-LAST.md](OFFLINE-UND-LAST.md).
 
-Vitest ist derzeit nicht erforderlich: Node test prüft Fachlogik und HTTP/MCP, React Testing Library mit jsdom prüft kritische Formular- und Cache-Abläufe. Vite transformiert TSX auch für diese Tests. Echte Browser-, Authentifizierungs- und Apple-Gerätetests bleiben zusätzlich nötig.
+Vitest ist derzeit nicht erforderlich: Node test prüft Fachlogik und HTTP/MCP, React Testing Library mit jsdom prüft kritische Formular- und Cache-Abläufe. Vite transformiert TSX auch für diese Tests. Playwright prüft den Produktionsbuild in Chromium mit simuliertem Supabase. Echte Authentifizierung und Apple-Gerätetests stehen aus.
 
-TanStack Query 5.108.4 ersetzt den pauschalen Refresh-Zähler durch kontogetrennte, kurzlebige Lesecaches mit gezielten Schlüsseln. Schreibantworten werden nach Bestätigung übernommen; betroffene laufende Abfragen werden zuvor abgebrochen. Notizänderungen invalidieren ihren Gegenstand, Kategorien ihren Typ, Objektänderungen die Objektlisten. Frische Daten werden wiederverwendet, veraltete bei Fokus/Wiederverbindung aktualisiert. Entwürfe bleiben außerhalb des Lesecaches und werden durch Refetches nicht überschrieben. Das ist noch keine persistente Offline-Datenhaltung und keine laufende Echtzeitübertragung zwischen Geräten. Der Medien-/Wissensvertrag steht in MEDIEN-UND-WISSEN.md.
+TanStack Query 5.108.4 ersetzt den pauschalen Refresh-Zähler durch kontogetrennte, kurzlebige Lesecaches mit gezielten Schlüsseln. Schreibantworten werden nach Bestätigung übernommen; betroffene laufende Abfragen werden zuvor abgebrochen. Notizänderungen invalidieren ihren Gegenstand, Kategorien ihren Typ, Objektänderungen die Objektlisten. Frische Daten werden wiederverwendet, veraltete bei Fokus/Wiederverbindung aktualisiert. Entwürfe bleiben außerhalb des Lesecaches und werden durch Refetches nicht überschrieben. Bestätigte Ansichten werden zusätzlich begrenzt auf dem Gerät gespeichert. Geräteübergreifende Abrufe erfolgen bei Fokus und Wiederverbindung. Der Medien-/Wissensvertrag steht in MEDIEN-UND-WISSEN.md.
 
 ## Verbindliche Nutzerentscheidung
 
-Projektname ist smairys.inventar. Backend ist Supabase Free. Zieladresse ist https://inventar.smairys.de mit DNS bei Cloudflare. Diese Festlegung ersetzt die offene Auswahl des zentralen Backends. Die folgende Variantenprüfung dokumentiert die bisherige Abwägung. Ein zusätzlicher Synchronisationsdienst bleibt auszuwählen. Hosting und DNS-Zielwert werden bei der Bereitstellung konkretisiert.
+Projektname ist smairys.inventar. Backend ist Supabase Free. Zieladresse ist https://inventar.smairys.de mit DNS bei Cloudflare. Diese Festlegung ersetzt die offene Auswahl des zentralen Backends. Die folgende Variantenprüfung dokumentiert die bisherige Abwägung. Die lokale Befehlswarteschlange synchronisiert direkt mit Supabase. Hosting und DNS-Zielwert werden bei der Bereitstellung konkretisiert.
 
 ## Entscheidung A1 – Eine geräteübergreifende PWA
 
@@ -44,7 +44,7 @@ Für den ersten Durchstich wird Supabase Free verwendet. Der Datenabgleich wird 
 | Aufgabe | Bevorzugtes Werkzeug | Nutzen und verbleibende Arbeit |
 | --- | --- | --- |
 | Oberfläche und Build | React, TypeScript und Vite | Komponenten, Typprüfung und statischer Build. Responsive Abläufe werden im Projekt gestaltet |
-| App-Hülle offline | vite-plugin-pwa mit Workbox | Manifest und Service Worker. Updateverhalten und Offlineabdeckung müssen getestet werden |
+| App-Hülle offline | Build-Manifest und Service Worker | SHA-256-Prüfung beim Installieren. Fehlgeschlagene Updates lassen den bisherigen Build aktiv. |
 | Zugriff auf Supabase | @supabase/supabase-js | Anmeldung, Daten- und Storage-API. Zugriffsregeln bleiben Teil des Projekts |
 | Lokale SQL-Daten und Datenabgleich | @powersync/web und @powersync/react | Lokale Datenbank, Warteschlange und reaktive Abfragen. Schreibregeln und Berechtigungen werden integriert |
 | Fotoübertragung | Uppy Core mit Tus oder direkt tus-js-client | Wiederaufnehmbare Transfers. Eine persistente lokale Datei und ein Übertragungszustand bleiben erforderlich |

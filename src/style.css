@@ -103,6 +103,19 @@ dd { margin: 6px 0; font-size: 16px; }
 .sync-issues { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .sync-issues li { padding: 12px; border: 1px solid #ffffff1a; border-radius: 12px; }
 .sync-issues .actions { margin-top: 12px; }
+.connection-state { display: flex; align-items: center; gap: 8px; color: #c3d6e9; margin: -4px 0 16px; font-size: 14px; }
+.connection-state span, .sync-state span { width: 7px; height: 7px; border-radius: 50%; background: #e7bd7f; flex: 0 0 auto; }
+.sync-state { display: flex; align-items: center; gap: 8px; color: #bec9d7; }
+.sync-state[data-phase="clear"] span { background: #9fdbbf; }
+.sync-state[data-phase="working"] span { background: #a7cdfa; animation: sync-pulse 1.4s ease-in-out infinite; }
+.sync-state[data-phase="review"] span { background: #ffb1a3; }
+.save-status[data-phase] { display: flex; align-items: center; gap: 8px; }
+.save-status[data-phase] span { width: 7px; height: 7px; border-radius: 50%; background: #e7bd7f; }
+.save-status[data-phase="working"] span { background: #a7cdfa; animation: sync-pulse 1.4s ease-in-out infinite; }
+.state-message { animation: state-in 160ms ease-out both; }
+@keyframes state-in { from { opacity: 0; transform: translateY(3px); } }
+@keyframes sync-pulse { 50% { opacity: .48; } }
+@media (prefers-reduced-motion: reduce) { .state-message, .sync-state span, .save-status[data-phase] span { animation: none !important; } }
 @media (max-width: 600px) { .settings-dialog { margin: auto auto max(12px, env(safe-area-inset-bottom)); } }
 @media (prefers-reduced-motion: reduce) { .gear-ring, .gear-center { transition: none; } .settings-dialog[open] { animation: none; } }
 .workspace-toolbar .actions > .settings-trigger { padding: 0; flex: none; }

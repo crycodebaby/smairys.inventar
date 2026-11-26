@@ -42,7 +42,7 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
 
 export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload }: {
   api: InventoryApi; initial: Item; notes: Note[]; labels: Label[]; onSaved: (item: Item) => void;
-  onNote: (note: Note) => void; onProtected: (value: boolean) => void; refreshAvailable: boolean; onReload: () => void;
+  onNote: (note: Note) => void; onProtected: (value: boolean) => void; refreshAvailable: boolean; onReload?: () => void;
 }) {
   const [base, setBase] = useState(initial);
   const [draft, setDraft] = useState(() => itemDraft(initial));
@@ -63,7 +63,7 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     if (result) { setBase(result.item); setDraft(itemDraft(result.item)); onSaved(result.item); }
   }
   return <section className="detail-panel" aria-label="Gegenstand bearbeiten">
-    <div className="section-header"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><div className="actions"><button className="quiet small" disabled={protectedWork} onClick={onReload} aria-label="Objekt aktualisieren">↻</button><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} /></div></div>
+    <div className="section-header"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><div className="actions">{onReload && <button className="quiet small" disabled={protectedWork} onClick={onReload} aria-label="Objekt aktualisieren">↻</button>}<ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} /></div></div>
     {(refreshAvailable || initial.revision > base.revision) && protectedWork && <p role="status" className="notice">Neue Fassung verfügbar. Deine Eingaben bleiben erhalten.</p>}
     {base.category_id && <p className="muted">Kategorie: {labels.find(label => label.id === base.category_id)?.name ?? 'Nicht geladen'}</p>}
     <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{(['object', 'notes'] as const).map(value => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => {
@@ -78,7 +78,7 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
         <div className="actions"><button type="button" className="quiet" onClick={() => { setDraft(rebaseDraft(itemDraft(base), draft, conflict)); setBase(conflict); write.clearError(); }}>Meine Änderungen übernehmen</button><button type="button" className="quiet" onClick={() => { setBase(conflict); setDraft(itemDraft(conflict)); write.clearError(); }}>Serverstand übernehmen</button></div><p className="muted">Die Auswahl wird erst mit „Änderungen speichern“ auf dem Server gespeichert.</p>
       </div>}
       <div className="actions"><button type="submit" disabled={write.busy || write.queued || !!conflict || (!dirty && !write.uncertain)}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Änderungen speichern'}</button>{!write.locked && dirty && <button className="quiet" type="button" onClick={() => { setDraft(itemDraft(base)); write.clearError(); }}>Eingaben zurücksetzen</button>}</div>
-      <p className="muted save-status" role="status">{write.queued ? 'Lokal gespeichert · ausstehend' : write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
+      <p className="muted save-status" data-phase={write.busy ? 'working' : write.queued ? 'queued' : undefined} role="status"><span aria-hidden="true"/>{write.busy ? 'Wird gespeichert …' : write.queued ? 'Lokal gespeichert · ausstehend' : write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
     </form>
     </div>
     <div role="tabpanel" id={`${tabId}-notes-panel`} aria-labelledby={`${tabId}-notes`} hidden={tab !== 'notes'} className="notes-section">{notes.length ? <ul className="notes-list">{notes.map(note => <li key={note.id}><div className="section-header"><h4>{note.title}</h4>{note.pinned && <span className="badge">Angeheftet</span>}</div>{note.verbatim_text && <><span className="eyebrow">Abschrift</span><p className="preserve-space">{note.verbatim_text}</p></>}{note.interpretation && <><span className="eyebrow">Einordnung</span><p className="preserve-space">{note.interpretation}</p></>}{noteLinks([note]).map(link => <a className="source-link" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{new URL(link.url).hostname} ↗</a>)}<span className="muted">{note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}</span></li>)}</ul> : null}
