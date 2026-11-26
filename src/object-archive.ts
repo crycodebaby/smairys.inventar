@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InventoryApi, Item, Label, Note } from './inventory-client.ts';
 import { mediaHash, validateMediaFile } from './inventory-media.ts';
 import type { Media, MediaApi } from './inventory-media.ts';
+import { withDeadline } from './request-deadline.ts';
 
 const maxArchive = 64 * 1024 * 1024;
 const maxManifest = 2 * 1024 * 1024;
@@ -21,6 +23,7 @@ const manifestSchema = z.object({
 });
 
 export async function exportObjectArchive(item: Item, notes: Note[], labels: Label[], media: Pick<MediaApi, 'list' | 'read'>, signal: AbortSignal) {
+  if (item.archive_import_pending) throw new Error('Zuerst den ausstehenden Import abschließen.');
   const { BlobWriter, BlobReader, TextReader, ZipWriter } = await import('@zip.js/zip.js');
   const files = await media.list(item.id, signal);
   const category = labels.find(value => value.id === item.category_id) ?? null;
@@ -97,35 +100,90 @@ export async function readObjectArchive(blob: Blob, signal: AbortSignal) {
   } finally { await reader.close(); }
 }
 
-export async function restoreObjectArchive(blob: Blob, api: InventoryApi, media: Pick<MediaApi, 'upload'>, signal: AbortSignal) {
-  const { manifest, files, namespace } = await readObjectArchive(blob, signal);
-  const options = { signal };
-  let categoryId: string | undefined;
-  if (manifest.category) {
-    const category = manifest.category;
+type CheckedArchive = Awaited<ReturnType<typeof readObjectArchive>>;
+const jobSchema = z.object({ item_id: z.uuid(), completed: z.boolean(), legacy: z.boolean() });
+const planSchema = z.object({
+  existing: jobSchema.nullable(),
+  legacy_item: z.uuid().nullish(),
+  candidates: z.array(z.object({ id: z.uuid(), title: z.string(), inventory_number: z.string() })),
+});
+export type ArchivePlan = { archive: CheckedArchive; plan: z.output<typeof planSchema> };
+export type ArchiveCommand = (input: {
+  archive_action: 'inspect' | 'begin' | 'finish'; source_item: string; digest: string;
+  target_item?: string; fields?: object;
+}, signal: AbortSignal) => Promise<unknown>;
+
+export function archiveCommand(client: SupabaseClient): ArchiveCommand {
+  return async (input, signal) => {
+    const { data, error } = await withDeadline(s => client.rpc('inventory_archive', input).retry(false).abortSignal(s), signal);
+    if (error) throw new Error('Archivstand konnte nicht bestätigt werden. Wähle dieselbe ZIP-Datei erneut.');
+    return data;
+  };
+}
+
+export async function inspectObjectArchive(blob: Blob, command: ArchiveCommand, signal: AbortSignal): Promise<ArchivePlan> {
+  const archive = await readObjectArchive(blob, signal);
+  const plan = planSchema.parse(await command({ archive_action: 'inspect', source_item: archive.manifest.item.id, digest: archive.namespace }, signal));
+  return { archive, plan };
+}
+
+async function archiveCategory(category: NonNullable<CheckedArchive['manifest']['category']>, namespace: string, api: InventoryApi, signal: AbortSignal) {
+    const options = { signal };
     const lookup = async () => (await api('list_labels', { kind: 'category' }, options)).labels
       .find(label => label.name.trim().toLowerCase() === category.name.toLowerCase());
-    categoryId = (await lookup())?.id;
-    if (!categoryId) {
-      try {
-        categoryId = (await api('create_label', { ...category, kind: 'category', operation_id: await operationId(namespace, 'category') }, options)).label.id;
-      } catch (reason) {
-        categoryId = (await lookup())?.id;
-        if (!categoryId) throw reason;
-      }
+    const existing = (await lookup())?.id;
+    if (existing) return existing;
+    try {
+      return (await api('create_label', { ...category, kind: 'category', operation_id: await operationId(namespace, 'category') }, options)).label.id;
+    } catch (reason) {
+      const current = (await lookup())?.id;
+      if (!current) throw reason;
+      return current;
+    }
+}
+
+export async function restoreObjectArchive(
+  { archive: { manifest, files, namespace }, plan }: ArchivePlan, target: string | undefined,
+  command: ArchiveCommand, api: InventoryApi, media: Pick<MediaApi, 'upload'>, signal: AbortSignal,
+  onTarget: (id: string) => void = () => {},
+) {
+  const identity = { source_item: manifest.item.id, digest: namespace };
+  const creating = !target && !plan.existing && !plan.legacy_item;
+  const { title, brand, model, description } = manifest.item;
+  const fields = creating ? { title, brand, model, description,
+    category_id: manifest.category ? await archiveCategory(manifest.category, namespace, api, signal) : undefined } : undefined;
+  const job = plan.existing?.completed ? plan.existing : jobSchema.parse(planSchema.parse(await command({
+    ...identity, archive_action: 'begin', target_item: target, fields,
+  }, signal)).existing);
+  onTarget(job.item_id);
+  if (job.completed) return { id: job.item_id, alreadyCompleted: true };
+
+  const options = { signal, deferListRefresh: true };
+  const contentsKey = (note: Pick<Note, 'title' | 'verbatim_text' | 'interpretation' | 'attribution' | 'pinned' | 'media_id'>) =>
+    JSON.stringify([note.title, note.verbatim_text, note.interpretation, note.attribution, note.pinned, note.media_id ?? null]);
+  const existingNotes = new Map<string, number>();
+  if (!creating) {
+    const detail = await api('get_item', { item_id: job.item_id }, options);
+    for (const note of detail.notes) {
+      const key = contentsKey(note);
+      existingNotes.set(key, (existingNotes.get(key) ?? 0) + 1);
     }
   }
-  const { title, brand, model, description } = manifest.item;
-  const { item } = await api('create_item', { title, brand, model, description,
-    category_id: categoryId, operation_id: await operationId(namespace, 'item') }, options);
   const mapped = new Map<string, Media>();
-  for (const [id, file] of files) mapped.set(id, await media.upload(item.id, file, signal, () => {}));
+  for (const [id, file] of files) mapped.set(id, await media.upload(job.item_id, file, signal, () => {}));
   for (const note of manifest.notes) {
     signal.throwIfAborted();
     const { title, verbatim_text, interpretation, attribution, pinned } = note;
-    await api('add_note', { item_id: item.id, title, verbatim_text, interpretation, attribution, pinned,
-      media_id: note.media_id ? mapped.get(note.media_id)?.id : undefined,
-      operation_id: await operationId(namespace, 'note/' + note.id) }, options);
+    const mediaId = note.media_id ? mapped.get(note.media_id)?.id : undefined;
+    const contents = { title, verbatim_text, interpretation, attribution, pinned, media_id: mediaId };
+    const key = contentsKey(contents);
+    const matches = existingNotes.get(key) ?? 0;
+    if (matches > 0) { existingNotes.set(key, matches - 1); continue; }
+    const operation = job.legacy ? await operationId(namespace, 'note/' + note.id)
+      : await operationId(job.item_id + '/' + manifest.item.id, note.id + '/' + key);
+    await api('add_note', { item_id: job.item_id, ...contents, operation_id: operation }, options);
   }
-  return item;
+  const result = jobSchema.parse(await command({ ...identity, archive_action: 'finish', target_item: job.item_id }, signal));
+  if (!result.completed || result.item_id !== job.item_id) throw new Error('Der Abschluss konnte nicht bestätigt werden.');
+  return { id: job.item_id, alreadyCompleted: false };
 }

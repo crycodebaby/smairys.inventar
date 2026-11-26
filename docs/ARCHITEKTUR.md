@@ -4,7 +4,7 @@ Stand 26. November 2026. Die Online-Basis, der Offline-Start und ein begrenzter 
 
 ## Implementierte Online-Basis
 
-Einzelne Objektarchive werden mit der fest versionierten Bibliothek `@zip.js/zip.js` im Browser erzeugt und geprüft. Ein Manifest verbindet Originale per SHA-256 und Medien-ID mit Notizen. Der Import verwendet reproduzierbare Auftrags-IDs und vorhandene Upload-Deduplizierung. Wiederaufnahme und Konfliktauflösung verwenden kontogetrennte IndexedDB-Transaktionen. Suche und Kategorieänderung bleiben im gemeinsamen Inventarbefehl.
+Einzelne Objektarchive werden mit der fest versionierten Bibliothek `@zip.js/zip.js` im Browser erzeugt und geprüft. Ein Manifest verbindet Originale per SHA-256 und Medien-ID mit Notizen. Die Datenbank speichert je Konto, Quellobjekt und Manifest-Prüfsumme das Ziel sowie den Abschluss. Eine neue Fassung kann ein bekanntes Objekt um Dateien und Notizen ergänzen oder eine Kopie anlegen. Vorhandene Objektdaten und Notizfassungen bleiben bei einer Ergänzung erhalten. Der Import verwendet reproduzierbare Notizaufträge und die vorhandene Upload-Deduplizierung. Ältere Importe können anhand derselben ZIP-Datei zugeordnet werden. Die Text- und Dateiwarteschlangen verwenden kontogetrennte IndexedDB-Transaktionen.
 
 Dateibezogene Notizen verwenden den bestehenden Inventarbefehl `add_note` mit optionaler Medien-ID. Der Datenbankdispatcher prüft die Bestätigung der Datei im selben Konto und Objekt, und ein zusammengesetzter Fremdschlüssel sichert die Beziehung. Notizen behalten die bestehende Token-, Revisions- und Offline-Auftragsarchitektur.
 

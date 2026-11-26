@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { access, readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
+import { exportObjectArchive } from '../src/object-archive.ts';
 
 if (!process.env.VITE_SUPABASE_URL) {
   try { process.loadEnvFile('.env.local'); }
@@ -42,6 +43,9 @@ const objectId = '49779ae5-10d8-458f-973a-7fff75ec8e5c';
 const secondObjectId = 'f77afcd5-44fd-40ff-abb1-81447b4ef374';
 const item = { id: objectId, inventory_number: 1, title: 'Ampeg Offline', brand: 'Ampeg', model: 'B-15', location: '', description: '', category_id: null, revision: 1 };
 const secondItem = { ...item, id: secondObjectId, inventory_number: 2, title: 'Nur in der Liste' };
+const importedItems = new Map();
+const archiveJobs = new Map();
+let interruptArchive = true;
 const notes = [];
 const calls = [];
 const writes = new Map();
@@ -203,14 +207,37 @@ try {
       await route.fulfill({ body: bytes, contentType: path.endsWith('.jpg') ? 'image/jpeg' : 'image/png', headers });
       return;
     }
+    if (url.pathname === '/rest/v1/rpc/inventory_archive') {
+      const { archive_action, source_item, digest, fields, target_item } = request.postDataJSON();
+      const key = source_item + '/' + digest;
+      const existing = archiveJobs.get(key);
+      if (archive_action === 'inspect') {
+        const ids = new Set([...archiveJobs.entries()].filter(([id]) => id.startsWith(source_item + '/')).map(([, job]) => job.item_id));
+        const candidates = [...ids].map(id => ({ ...importedItems.get(id), inventory_number: String(importedItems.get(id).inventory_number) }));
+        await route.fulfill({ json: { existing: existing ?? null, candidates }, headers });
+      } else if (archive_action === 'finish') {
+        assert.equal(existing.item_id, target_item);
+        existing.completed = true;
+        importedItems.get(target_item).archive_import_pending = false;
+        await route.fulfill({ json: existing, headers });
+      } else {
+        const id = existing?.item_id ?? target_item ?? crypto.randomUUID();
+        if (!importedItems.has(id)) importedItems.set(id, { ...item, ...fields, id, inventory_number: 3 + importedItems.size });
+        const job = existing ?? { item_id: id, completed: false, legacy: false };
+        importedItems.get(id).archive_import_pending = !job.completed;
+        archiveJobs.set(key, job);
+        await route.fulfill({ json: { existing: job, candidates: [] }, headers });
+      }
+      return;
+    }
     assert.equal(url.pathname, '/rest/v1/rpc/inventory_command');
     const { command_name: name, arguments: args } = request.postDataJSON();
     calls.push(name);
     if (serviceUnavailable) { await route.fulfill({ status: 503, json: { code: 'test_outage', message: 'Unavailable' }, headers }); return; }
     let data;
-    if (name === 'search_inventory') data = { items: [item, secondItem] };
+    if (name === 'search_inventory') data = { items: [item, secondItem, ...importedItems.values()] };
     else if (name === 'list_labels') data = { labels: [{ id: '69abbe43-67a3-4f2c-9feb-7c84c16e329a', name: 'Röhren', color: '#6678AA', kind: 'category' }] };
-    else if (name === 'get_item') data = { item: args.item_id === objectId ? item : secondItem, notes: args.item_id === objectId ? notes : [] };
+    else if (name === 'get_item') data = { item: args.item_id === objectId ? item : importedItems.get(args.item_id) ?? secondItem, notes: notes.filter(note => note.item_id === args.item_id) };
     else if (name === 'update_item') {
       if (injectRevisionConflict) {
         injectRevisionConflict = false;
@@ -220,6 +247,11 @@ try {
       if (args.expected_revision !== item.revision) data = { error: 'REVISION_CONFLICT', current: { ...item } };
       else { Object.assign(item, args.changes); item.revision++; data = { item: { ...item } }; }
     } else if (name === 'add_note') {
+      if (interruptArchive && importedItems.has(args.item_id)) {
+        interruptArchive = false;
+        await route.fulfill({ status: 429, json: { code: 'fixture', message: 'Interrupted' }, headers });
+        return;
+      }
       if (!writes.has(args.operation_id)) {
         const media = args.media_id && [...mediaRecords.values()].find(record => record.id === args.media_id);
         const note = { ...args, id: crypto.randomUUID(), created_at: new Date().toISOString(),
@@ -276,10 +308,16 @@ try {
   await page.getByRole('button', { name: 'Erneut versuchen', exact: true }).waitFor();
   assert.equal(mediaRequests.list - readsBeforeUploads, 0);
   await page.reload();
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const uploads = page.getByRole('region', { name: 'Uploads' });
+  await uploads.getByText('Beleg.pdf', { exact: true }).waitFor();
+  await uploads.getByText(/Ampeg Offline · 6 MiB/).waitFor();
+  await uploads.getByRole('button', { name: 'Fortsetzen' }).click();
+  await uploads.getByText('Datei gespeichert.', { exact: true }).waitFor();
+  await uploads.getByText('Keine ausstehenden Dateien', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Einstellungen schließen' }).click();
   await page.getByRole('button', { name: /Ampeg Offline/ }).click();
   await page.getByRole('tab', { name: 'Medien' }).click();
-  await page.getByText('1 Datei wartet auf den Upload', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Erneut versuchen', exact: true }).click();
   await page.getByRole('button', { name: /Beleg.pdf/ }).waitFor();
   assert.equal(tusResumed, true);
   assert.deepEqual(tusChunks, [6 * 1024 * 1024, 128]);
@@ -293,6 +331,9 @@ try {
     loginAndStartup: calls.slice(0, 3),
   }));
   await page.getByRole('tab', { name: 'Objekt' }).click();
+  await page.getByLabel('Objektaktionen').click();
+  await page.getByRole('button', { name: 'Offline bereithalten', exact: true }).click();
+  await page.getByText('Objekt und Notizen offline verfügbar', { exact: true }).waitFor();
   console.log('Private Medien, Bestätigung, Deduplizierung und TUS-Wiederaufnahme nach Neustart geprüft.');
   assert.equal(await page.getByLabel(/Fundort|Lagerort/).count(), 0);
   assert.equal(await page.getByLabel(/Bezeichnung/).evaluate(field => parseFloat(getComputedStyle(field).fontSize) >= 16), true);
@@ -444,18 +485,74 @@ try {
   await reopened.waitForFunction(() => !document.querySelector('.connection-state'));
   console.log('Kontowechsel und erneute Anmeldung nach abgelaufener Sitzung geprüft.');
 
+  await reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const synchronization = reopened.getByRole('region', { name: 'Synchronisierung' });
+  await synchronization.getByRole('button', { name: 'Jetzt prüfen' }).click();
+  await synchronization.locator('time').waitFor();
+  await reopened.getByRole('button', { name: 'Einstellungen schließen' }).click();
   serviceUnavailable = true;
   await reopened.getByRole('button', { name: 'Inventarliste aktualisieren' }).click();
   await reopened.getByText('Verbindung gestört · lokale Kopie', { exact: true }).waitFor();
+  await reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await synchronization.getByText('Verbindung gestört', { exact: true }).waitFor();
+  assert.equal(await synchronization.getByText('Aktuell', { exact: true }).count(), 0);
+  const lastContact = await synchronization.locator('time').getAttribute('datetime');
+  await synchronization.getByRole('button', { name: 'Jetzt prüfen' }).click();
+  await synchronization.getByText('Verbindung gestört', { exact: true }).waitFor();
+  assert.equal(await synchronization.locator('time').getAttribute('datetime'), lastContact);
+  await reopened.getByRole('button', { name: 'Einstellungen schließen' }).click();
   const beforeLocalSearch = calls.length;
   await reopened.getByRole('searchbox').fill('b-15');
   await reopened.getByRole('button', { name: 'Suchen', exact: true }).click();
   await reopened.getByRole('button', { name: /Ampeg Offline/ }).waitFor();
   assert.equal(calls.length, beforeLocalSearch);
+  await reopened.getByRole('searchbox').fill('Außerhalb des lokalen Bestands');
+  await reopened.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await reopened.getByText('Keine Treffer im lokalen Bestand', { exact: true }).waitFor();
   serviceUnavailable = false;
   await reopened.getByRole('button', { name: 'Inventarliste aktualisieren' }).click();
   await reopened.waitForFunction(() => !document.querySelector('.connection-state'));
+  await reopened.getByRole('searchbox').fill('');
+  await reopened.getByRole('button', { name: 'Suchen', exact: true }).click();
   console.log('Serverausfall mit bestehender Netzverbindung und lokale Suche ohne RPC geprüft.');
+
+  const archiveSource = { ...item, id: crypto.randomUUID(), title: 'Archiv-Prüfobjekt', inventory_number: '105', category_id: null };
+  const archiveNote = { ...notes[0], media_id: null };
+  const noMedia = { list: async () => [], read: async () => { throw new Error('Unexpected media read'); } };
+  const archiveFile = async (title, archiveNotes) => ({
+    name: 'Pruefobjekt.zip', mimeType: 'application/zip',
+    buffer: Buffer.from(await (await exportObjectArchive({ ...archiveSource, title }, archiveNotes, [], noMedia, new AbortController().signal)).arrayBuffer()),
+  });
+  const originalArchive = await archiveFile(archiveSource.title, [archiveNote]);
+  const openSettings = () => reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const closeSettings = () => reopened.getByRole('button', { name: 'Einstellungen schließen' }).click();
+  const chooser = reopened.getByLabel('Objektarchiv importieren');
+  await openSettings();
+  await chooser.setInputFiles(originalArchive);
+  await reopened.getByRole('region', { name: 'Objektarchiv' }).getByText('Import ausstehend. Wähle dieselbe ZIP-Datei erneut.', { exact: true }).waitFor();
+  await closeSettings();
+  const row = reopened.getByRole('button', { name: /Archiv-Prüfobjekt/ });
+  await row.getByText('Import ausstehend', { exact: true }).waitFor();
+  await reopened.reload();
+  await row.getByText('Import ausstehend', { exact: true }).waitFor();
+  await openSettings();
+  await chooser.setInputFiles(originalArchive);
+  await reopened.getByText('Objektarchiv übernommen.', { exact: true }).waitFor();
+  assert.equal(importedItems.size, 1);
+  const version = await archiveFile('Archiv-Version 2', [archiveNote, { ...archiveNote, id: crypto.randomUUID(), title: 'Ergänzung' }]);
+  await chooser.setInputFiles(version);
+  await reopened.getByRole('button', { name: 'Objekt ergänzen' }).click();
+  await reopened.getByText('Objektarchiv übernommen.', { exact: true }).waitFor();
+  assert.equal(importedItems.size, 1);
+  const target = [...importedItems.values()][0];
+  assert.equal(target.title, archiveSource.title);
+  assert.equal(notes.filter(note => note.item_id === target.id).length, 2);
+  await chooser.setInputFiles(await archiveFile('Archiv-Version 3', []));
+  await reopened.getByRole('button', { name: 'Als Kopie importieren' }).click();
+  await reopened.getByText('Objektarchiv übernommen.', { exact: true }).waitFor();
+  assert.equal(importedItems.size, 2);
+  await closeSettings();
+  console.log('Archivabbruch, Neustart, Ergänzen und ausdrückliche Kopie geprüft.');
 
   worker = originalWorker.replace(/const BUILD = "([^"]+)";/, 'const BUILD = "$1-test-broken";')
     .replace(/"hash":"[a-f0-9]+"/, '"hash":"invalid"');
@@ -497,7 +594,37 @@ try {
     const names = (await caches.keys()).filter(name => name.startsWith('smairys-inventar-shell-'));
     return names.length === 1 && names[0] === cache + '-test-update';
   }, activeCache);
+  await reopened.getByRole('button', { name: /Nur in der Liste/ }).click();
+  await reopened.getByRole('heading', { name: 'Nur in der Liste', exact: true }).waitFor();
+  await reopened.getByRole('button', { name: 'Zurück', exact: true }).click();
   await setOffline(true);
+  await reopened.getByText('Offline · lokale Kopie', { exact: true }).waitFor();
+  await reopened.getByRole('button', { name: /Ampeg Offline/ }).click();
+  await reopened.getByRole('tab', { name: 'Medien' }).click();
+  const pendingInput = reopened.getByLabel('Dateien hinzufügen');
+  const group = start => Array.from({ length: 12 }, (_, index) => ({
+    name: `Wartend-${start + index}.png`, mimeType: 'image/png', buffer: testPng,
+  }));
+  await pendingInput.setInputFiles(group(1));
+  await reopened.getByText('12 Dateien warten auf den Upload', { exact: true }).waitFor();
+  await pendingInput.setInputFiles(group(13));
+  await reopened.getByText('24 Dateien warten auf den Upload', { exact: true }).waitFor();
+  await reopened.getByRole('button', { name: 'Zurück', exact: true }).click();
+  await reopened.getByRole('button', { name: /Nur in der Liste/ }).click();
+  await reopened.getByRole('tab', { name: 'Medien' }).click();
+  await pendingInput.setInputFiles({ name: 'Weitere-Aufnahme.png', mimeType: 'image/png', buffer: testPng });
+  await reopened.getByText('Der lokale Uploadspeicher ist voll. Öffne Einstellungen › Uploads.', { exact: true }).waitFor();
+  await reopened.reload();
+  await openSettings();
+  const centralQueue = reopened.getByRole('region', { name: 'Uploads' });
+  await centralQueue.getByText(/^24 lokal/).waitFor();
+  const queuedRow = centralQueue.getByRole('listitem').filter({ hasText: 'Wartend-24.png' });
+  await queuedRow.getByText(/Ampeg Offline/).waitFor();
+  await queuedRow.getByRole('button', { name: 'Entfernen' }).click();
+  await queuedRow.getByRole('button', { name: 'Datei verwerfen' }).click();
+  await centralQueue.getByText(/^23 lokal/).waitFor();
+  await closeSettings();
+  console.log('Kontoweites Uploadlimit, zentrale Wiederauffindbarkeit und Freigabe nach Neustart geprüft.');
   await reopened.getByRole('button', { name: 'Einstellungen' }).click();
   await reopened.getByRole('button', { name: 'Abmelden', exact: true }).click();
   await reopened.getByRole('heading', { name: 'Anmelden', exact: true }).waitFor();

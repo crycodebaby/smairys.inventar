@@ -4,6 +4,9 @@ import type { CommandInput, Item } from './inventory-client.ts';
 import { RevisionComparison } from './RevisionComparison.tsx';
 import type { SyncPhase } from './offline-state.ts';
 import type { AppShell } from './use-app-shell.ts';
+import { UploadSettings } from './UploadSettings.tsx';
+import type { UploadSettingsProps } from './UploadSettings.tsx';
+import type { ArchivePlan } from './object-archive.ts';
 
 const commandTitles = {
   create_item: 'Neues Objekt',
@@ -25,14 +28,18 @@ type SettingsProps = {
   onLoadConflict?: (itemId: string) => Promise<Item>;
   onResolveConflict?: (id: string, revision: number, changes: CommandInput<'update_item'>['changes']) => Promise<void>;
   categoryName?: (id: string) => string;
-  onImportArchive?: (file: File) => Promise<void>;
+  onCheckArchive?: (file: File) => Promise<ArchivePlan>;
+  onImportArchive?: (archive: ArchivePlan, target?: string) => Promise<string>;
   synchronization: SyncPhase;
+  confirmedAt: number | null;
+  uploads: UploadSettingsProps;
   shell: AppShell;
   updateDisabled: boolean;
 };
 
 const syncLabels: Record<SyncPhase, string> = {
-  offline: 'Offline', working: 'Wird synchronisiert', review: 'Zur Prüfung', waiting: 'Ausstehend', clear: 'Aktuell',
+  offline: 'Offline', session: 'Anmeldung erforderlich', unreachable: 'Verbindung gestört', unverified: 'Serverkontakt ausstehend',
+  working: 'Wird synchronisiert', review: 'Zur Prüfung', waiting: 'Ausstehend', clear: 'Aktuell',
 };
 const shellLabels: Record<AppShell['phase'], string> = {
   ready: 'Offline-Start vorbereitet', preparing: 'Offline-Start wird vorbereitet',
@@ -47,9 +54,12 @@ export function SettingsDialog(props: SettingsProps) {
   const blocked = props.entries.filter(entry => entry.status === 'blocked');
   const [review, setReview] = useState<{ id: string; current: Item; changes: CommandInput<'update_item'>['changes'] } | null>(null);
   const [working, setWorking] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState('');
+  const [archivePlan, setArchivePlan] = useState<ArchivePlan | null>(null);
+  const [target, setTarget] = useState('');
 
   function show() {
     dialog.current?.showModal();
@@ -60,6 +70,7 @@ export function SettingsDialog(props: SettingsProps) {
     props.onOpen(false);
     setReview(null);
     setError('');
+    setArchivePlan(null);
     trigger.current?.focus();
   }
 
@@ -73,6 +84,14 @@ export function SettingsDialog(props: SettingsProps) {
       if (dialog.current?.open) setReview({ id: entry.id, current, changes: request.changes });
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Der Konflikt konnte nicht geöffnet werden.'); }
     finally { setWorking(false); }
+  }
+
+  async function checkSync() {
+    setChecking(true);
+    setError('');
+    try { await props.onSync(); }
+    catch { setError('Der Abgleich konnte nicht gestartet werden. Versuche es erneut.'); }
+    finally { setChecking(false); }
   }
 
   async function resolveReview(keepChanges: boolean) {
@@ -96,13 +115,38 @@ export function SettingsDialog(props: SettingsProps) {
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
-  async function importArchive(file: File) {
-    if (!props.onImportArchive || importing) return;
+  async function chooseArchive(file: File) {
+    const load = props.onCheckArchive;
+    const restore = props.onImportArchive;
+    if (!load || !restore || importing) return;
     setImporting(true);
     setImportMessage('');
-    try { await props.onImportArchive(file); setImportMessage('Objektarchiv übernommen.'); }
+    setArchivePlan(null);
+    try {
+      const checked = await load(file);
+      if (!dialog.current?.open) return;
+      if (!checked.plan.existing && !checked.plan.legacy_item && checked.plan.candidates.length) {
+        setTarget(checked.plan.candidates[0].id);
+        setArchivePlan(checked);
+      } else {
+        setImportMessage(await restore(checked));
+      }
+    }
     catch (reason) { setImportMessage(reason instanceof Error ? reason.message : 'Import fehlgeschlagen.'); }
     finally { setImporting(false); }
+  }
+
+  async function importArchive(itemId?: string) {
+    if (!archivePlan || !props.onImportArchive || importing) return;
+    setImporting(true);
+    setImportMessage('');
+    try {
+      setImportMessage(await props.onImportArchive(archivePlan, itemId));
+      setArchivePlan(null);
+    } catch (reason) {
+      setArchivePlan(null);
+      setImportMessage(reason instanceof Error ? reason.message : 'Import fehlgeschlagen.');
+    } finally { setImporting(false); }
   }
 
   return <>
@@ -120,8 +164,11 @@ export function SettingsDialog(props: SettingsProps) {
         <button className="quiet" type="button" disabled={props.signOutDisabled} onClick={props.onSignOut}>Abmelden</button>
       </section>
       <section className="settings-section settings-sync" aria-label="Synchronisierung">
-        <div><h3>Synchronisierung</h3><p className="sync-state" data-phase={props.synchronization} role="status"><span aria-hidden="true"/>{syncLabels[props.synchronization]}{pending.length + blocked.length > 0 ? ` · ${pending.length} ausstehend · ${blocked.length} zur Prüfung` : ''}</p></div>
-        <button className="quiet" type="button" disabled={props.synchronization === 'working' || props.synchronization === 'offline'} onClick={() => void props.onSync()}>Jetzt prüfen</button>
+        <div><h3>Synchronisierung</h3><p className="sync-state" data-phase={props.synchronization} role="status"><span aria-hidden="true"/>{syncLabels[props.synchronization]}</p>
+          {(pending.length > 0 || blocked.length > 0) && <p className="muted">{pending.length} ausstehend · {blocked.length} zur Prüfung</p>}
+          {props.confirmedAt !== null && <p className="muted">Letzter Serverkontakt · <time dateTime={new Date(props.confirmedAt).toISOString()}>{new Date(props.confirmedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</time></p>}
+        </div>
+        <button className="quiet" type="button" disabled={checking || props.synchronization === 'working' || props.synchronization === 'offline' || props.synchronization === 'session'} onClick={() => void checkSync()}>{checking ? 'Prüft …' : 'Jetzt prüfen'}</button>
         {props.storageError && <p className="error" role="alert">Der lokale Speicher ist gerade nicht verfügbar.</p>}
         {pending[0]?.message && <p className="muted sync-message">{pending[0].message} Der Auftrag bleibt lokal gespeichert.</p>}
         {error && <p className="error" role="alert">{error}</p>}
@@ -142,6 +189,7 @@ export function SettingsDialog(props: SettingsProps) {
           </div>
         </li>)}</ul>}
       </section>
+      <UploadSettings {...props.uploads} open={props.open}/>
       <section className="settings-section settings-sync" aria-label="App">
         <div><h3>App</h3><p className="muted" role="status">{shellLabels[props.shell.phase]}</p></div>
         {props.shell.phase === 'update' && <button className="quiet" type="button" disabled={props.updateDisabled || props.synchronization === 'offline'} onClick={props.shell.applyUpdate}>Aktualisieren</button>}
@@ -150,14 +198,25 @@ export function SettingsDialog(props: SettingsProps) {
       <section className="settings-section settings-sync" aria-label="Objektarchiv">
         <h3>Objektarchiv</h3>
         <label className="media-picker">
-          <input type="file" className="sr-only" aria-label="Objektarchiv importieren" accept=".zip,application/zip" disabled={!props.onImportArchive || importing}
+          <input type="file" className="sr-only" aria-label="Objektarchiv importieren" accept=".zip,application/zip" disabled={!props.onCheckArchive || importing}
             onChange={event => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = '';
-              if (file) void importArchive(file);
+              if (file) void chooseArchive(file);
             }}/>
           <span>{importing ? 'Wird importiert …' : 'Importieren'}</span>
         </label>
+        {archivePlan && <div className="sync-issues archive-choice">
+          <label>Vorhandenes Objekt <select value={target} onChange={event => setTarget(event.target.value)} disabled={importing}>
+            {archivePlan.plan.candidates.map(item => <option key={item.id} value={item.id}>#{item.inventory_number} · {item.title}</option>)}
+          </select></label>
+          <p className="muted">Ergänzen übernimmt Dateien und Notizen. Die vorhandenen Objektdaten bleiben erhalten.</p>
+          <div className="actions">
+            <button type="button" disabled={importing || !props.onImportArchive} onClick={() => void importArchive(target)}>Objekt ergänzen</button>
+            <button type="button" className="quiet" disabled={importing || !props.onImportArchive} onClick={() => void importArchive()}>Als Kopie importieren</button>
+            <button type="button" className="quiet" disabled={importing} onClick={() => setArchivePlan(null)}>Abbrechen</button>
+          </div>
+        </div>}
         {importMessage && <p className="sync-message" role="status">{importMessage}</p>}
       </section>
     </dialog>

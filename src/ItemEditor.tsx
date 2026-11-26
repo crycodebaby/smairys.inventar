@@ -4,6 +4,7 @@ import { changedFields, draftKeys, itemDraft, rebaseDraft, RevisionConflict } fr
 import type { InventoryApi, Item, ItemDraft, Label, Note } from './inventory-client.ts';
 import { useInventoryWrite } from './use-inventory-write.ts';
 import { ObjectActions } from './ObjectActions.tsx';
+import type { OfflineAction } from './ObjectActions.tsx';
 import { noteLinks } from './object-export.ts';
 import type { MediaApi } from './inventory-media.ts';
 import { fieldLabels, RevisionComparison } from './RevisionComparison.tsx';
@@ -42,10 +43,11 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
   </section>;
 }
 
-export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload, onArchive, media }: {
+export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload, onArchive, media, offline }: {
   api: InventoryApi; initial: Item; notes: Note[]; labels: Label[]; onSaved: (item: Item) => void;
   onNote: (note: Note) => void; onProtected: (value: boolean) => void; refreshAvailable: boolean; onReload?: () => void;
   onArchive?: () => Promise<void>;
+  offline?: OfflineAction;
   media?: { api: MediaApi; owner: string; projectUrl: string; email?: string; online: boolean };
 }) {
   const [base, setBase] = useState(initial);
@@ -76,7 +78,8 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     if (result) { setBase(result.item); setDraft(itemDraft(result.item)); setCategory(result.item.category_id); onSaved(result.item); }
   }
   return <section className="detail-panel" aria-label="Gegenstand bearbeiten">
-    <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload} onArchive={onArchive}/></div>
+    <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload} onArchive={initial.archive_import_pending ? undefined : onArchive} offline={offline}/></div>
+    {initial.archive_import_pending && <p className="state-message archive-pending" role="status">Import ausstehend · dieselbe ZIP-Datei in den Einstellungen erneut auswählen</p>}
     {(refreshAvailable || initial.revision > base.revision) && protectedWork && <p role="status" className="notice">Neue Fassung verfügbar. Deine Eingaben bleiben erhalten.</p>}
     <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{tabs.map((value, index) => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -105,7 +108,7 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     </div>
     {media && <div role="tabpanel" id={`${tabId}-media-panel`} aria-labelledby={`${tabId}-media`} hidden={tab !== 'media'}>
       {mediaVisited && <Suspense fallback={<p className="muted" role="status">Laden …</p>}>
-        <ItemMedia {...media} itemId={base.id} active={tab === 'media'} onProtected={setMediaProtected}
+        <ItemMedia {...media} itemId={base.id} itemTitle={base.title} active={tab === 'media'} onProtected={setMediaProtected}
           requestedMedia={requestedMedia} onRequestHandled={() => setRequestedMedia(null)}
           onAddNote={noteProtected ? undefined : file => {
             setNoteSource({ id: file.id, name: file.original_name });

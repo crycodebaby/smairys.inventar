@@ -338,6 +338,9 @@ dd { margin: 4px 0 0; font-size: 1rem; overflow-wrap: anywhere; }
 .sync-issues { display: grid; gap: 8px; margin: 0; }
 .sync-issues li { padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
 .sync-issues .actions { margin-top: 8px; }
+.upload-entries strong { overflow-wrap: anywhere; }
+.archive-choice select { display: block; width: 100%; margin-top: 6px; }
+.archive-pending { color: #e6c797; }
 
 /* The colored light stays on the control surface; the text always uses its own solid color. */
 :is(.settings-trigger, .new-object:not(:disabled), .object-menu > summary, .item-row[aria-pressed="true"], .detail-tabs button[aria-selected="true"]) {
@@ -373,7 +376,7 @@ dd { margin: 4px 0 0; font-size: 1rem; overflow-wrap: anywhere; }
   background: #e7bd7f;
 }
 .sync-state[data-phase="clear"] span { background: #9fdbbf; }
-.sync-state[data-phase="review"] span { background: #ffb1a3; }
+.sync-state:is([data-phase="review"], [data-phase="unreachable"]) span { background: #ffb1a3; }
 .sync-state[data-phase="working"] span, .save-status[data-phase="working"] span { background: var(--focus); animation: sync-pulse 1.4s ease-in-out infinite; }
 .save-status { margin: 0; }
 .notice, .error, .conflict { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; overflow-wrap: anywhere; }

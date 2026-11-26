@@ -6,6 +6,7 @@ const itemSchema = z.object({
   id: z.uuid(), inventory_number: z.union([z.string(), z.number()]).transform(String),
   title: z.string(), brand: z.string(), model: z.string(), description: z.string(),
   category_id: z.uuid().nullable(), revision: z.number().int().positive(),
+  archive_import_pending: z.boolean().optional(),
 });
 const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/), kind: z.enum(['category', 'condition', 'workflow', 'marker']) });
 const noteSchema = z.object({

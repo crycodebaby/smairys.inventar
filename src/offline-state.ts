@@ -34,11 +34,12 @@ export function rememberedIdentity(storage: Pick<Storage, 'getItem'>, key: strin
   } catch { return null; }
 }
 
-export type SyncPhase = 'offline' | 'working' | 'review' | 'waiting' | 'clear';
-export function syncPhase(available: boolean, running: boolean, entries: OutboxEntry[]): SyncPhase {
-  if (!available) return 'offline';
+export type ConnectionPhase = 'online' | 'offline' | 'session' | 'unreachable';
+export type SyncPhase = Exclude<ConnectionPhase, 'online'> | 'working' | 'review' | 'waiting' | 'clear' | 'unverified';
+export function syncPhase(connection: ConnectionPhase, running: boolean, entries: OutboxEntry[], confirmedAt: number | null): SyncPhase {
+  if (connection !== 'online') return connection;
   if (running) return 'working';
   if (entries.some(entry => entry.status === 'blocked')) return 'review';
   if (entries.some(entry => entry.status === 'pending')) return 'waiting';
-  return 'clear';
+  return confirmedAt === null ? 'unverified' : 'clear';
 }

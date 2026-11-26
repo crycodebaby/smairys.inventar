@@ -4,12 +4,15 @@ import type { Item, Label, Note } from './inventory-client.ts';
 import { buildObjectExport, downloadExport, noteLinks } from './object-export.ts';
 import type { ExportSelection } from './object-export.ts';
 
-export function ObjectActions({ item, notes, labels, disabled, onReload, onArchive }: { item: Item; notes: Note[]; labels: Label[]; disabled: boolean; onReload?: () => void; onArchive?: () => Promise<void> }) {
+export type OfflineAction = { pinned: boolean; toggle: () => Promise<void> };
+
+export function ObjectActions({ item, notes, labels, disabled, onReload, onArchive, offline }: { item: Item; notes: Note[]; labels: Label[]; disabled: boolean; onReload?: () => void; onArchive?: () => Promise<void>; offline?: OfflineAction }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const trigger = useRef<HTMLElement>(null);
   const [selection, setSelection] = useState<ExportSelection>({ metadata: true, notes: true, links: true, format: 'markdown' });
   const [exportOpen, setExportOpen] = useState(false); const [error, setError] = useState(''); const id = useId();
   const [archiving, setArchiving] = useState(false);
+  const [pinning, setPinning] = useState(false);
   function save(event: FormEvent) {
     event.preventDefault(); setError('');
     try { downloadExport(buildObjectExport(item, notes, labels, selection)); }
@@ -21,6 +24,14 @@ export function ObjectActions({ item, notes, labels, disabled, onReload, onArchi
     try { await onArchive(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Das Archiv konnte nicht erstellt werden.'); }
     finally { setArchiving(false); }
+  }
+  async function toggleOffline() {
+    if (!offline) return;
+    setPinning(true);
+    setError('');
+    try { await offline.toggle(); close(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Offline-Speicherung fehlgeschlagen.'); }
+    finally { setPinning(false); }
   }
   const hasLinks = noteLinks(notes).length > 0;
   function close() {
@@ -36,6 +47,7 @@ export function ObjectActions({ item, notes, labels, disabled, onReload, onArchi
       <button type="button" className="quiet" disabled={disabled} onClick={() => setExportOpen(true)}>Herunterladen</button>
       {onArchive && <button type="button" className="quiet" disabled={disabled || archiving} onClick={() => void archive()}>{archiving ? 'Archiv wird erstellt …' : 'Objektarchiv herunterladen'}</button>}
       {onReload && <button type="button" className="quiet" disabled={disabled} onClick={() => { close(); onReload(); }}>Objekt aktualisieren</button>}
+      {offline && <button type="button" className="quiet" disabled={disabled || pinning} onClick={() => void toggleOffline()}>{offline.pinned ? 'Offline-Markierung entfernen' : 'Offline bereithalten'}</button>}
       {error && <p className="error" role="alert">{error}</p>}
     </> : <form onSubmit={save} className="export-form"><h3>Herunterladen</h3>
       <label className="checkbox-label"><input type="checkbox" checked={selection.metadata} onChange={event => setSelection({ ...selection, metadata: event.target.checked })} />Metadaten</label>

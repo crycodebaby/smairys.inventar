@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mediaAccept } from './inventory-media.ts';
 import type { Media, MediaApi, UploadStage } from './inventory-media.ts';
-import { listQueuedMedia, queueMedia, removeQueuedMedia } from './media-queue.ts';
+import { listQueuedMedia, queueMedia, removeQueuedMedia, sendQueuedMedia, subscribeToMediaQueue } from './media-queue.ts';
 import type { QueuedMedia } from './media-queue.ts';
 
 type UploadState = { phase: 'idle' | 'done' }
@@ -42,8 +42,8 @@ function MediaThumbnail({ file, api, enabled }: { file: Media; api: MediaApi; en
   </div>;
 }
 
-export default function ItemMedia({ api, owner, projectUrl, email, itemId, active, online, onProtected, requestedMedia, onRequestHandled, onAddNote }: {
-  api: MediaApi; owner: string; projectUrl: string; email?: string; itemId: string; active: boolean; online: boolean;
+export default function ItemMedia({ api, owner, projectUrl, email, itemId, itemTitle, active, online, onProtected, requestedMedia, onRequestHandled, onAddNote }: {
+  api: MediaApi; owner: string; projectUrl: string; email?: string; itemId: string; itemTitle: string; active: boolean; online: boolean;
   onProtected: (value: boolean) => void;
   requestedMedia: string | null;
   onRequestHandled: () => void;
@@ -82,10 +82,14 @@ export default function ItemMedia({ api, owner, projectUrl, email, itemId, activ
   useEffect(() => {
     if (!active) return;
     let current = true;
-    void listQueuedMedia(scope, itemId).then(entries => { if (current) setPending(entries); }).catch(() => {
-      if (current) setUpload({ phase: 'paused', message: 'Der lokale Uploadspeicher ist nicht verfügbar.' });
-    });
-    return () => { current = false; };
+    const reload = () => {
+      void listQueuedMedia(scope, itemId).then(entries => { if (current) setPending(entries); }).catch(() => {
+        if (current) setUpload({ phase: 'paused', message: 'Der lokale Uploadspeicher ist nicht verfügbar.' });
+      });
+    };
+    reload();
+    const unsubscribe = subscribeToMediaQueue(scope, reload);
+    return () => { current = false; unsubscribe(); };
   }, [scope, itemId, active]);
   useEffect(() => {
     if (!online) uploadControl.current?.abort();
@@ -105,11 +109,10 @@ export default function ItemMedia({ api, owner, projectUrl, email, itemId, activ
     const confirmed: Media[] = [];
     try {
       for (const entry of files) {
-        const media = await api.upload(itemId, entry.file, controller.signal, (phase, percent) => {
+        const media = await sendQueuedMedia(scope, entry.id, api, controller.signal, (phase, percent) => {
           if (alive.current) setUpload({ phase, name: entry.file.name, position: completed + 1, total: files.length, percent });
         });
-        confirmed.push(media);
-        await removeQueuedMedia(scope, entry.id);
+        if (media) confirmed.push(media);
         if (alive.current) setPending(previous => previous.filter(file => file.id !== entry.id));
         completed++;
       }
@@ -148,9 +151,8 @@ export default function ItemMedia({ api, owner, projectUrl, email, itemId, activ
     if (files.length > 12) { setUpload({ phase: 'paused', message: 'Wähle höchstens 12 Dateien auf einmal.' }); return; }
     setStaging(true);
     try {
-      const entries = await queueMedia(scope, itemId, files);
+      const entries = await queueMedia(scope, itemId, files, itemTitle);
       if (!alive.current) return;
-      setPending(previous => [...previous, ...entries]);
       if (canUpload.current) void send(entries);
       else setUpload({ phase: 'paused', message: 'Dateien lokal für den Upload gespeichert.' });
     } catch (reason) {

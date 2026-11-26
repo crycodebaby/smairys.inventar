@@ -14,13 +14,14 @@ import { InventoryOutbox } from './inventory-outbox.ts';
 import type { OutboxEntry } from './inventory-outbox.ts';
 import { OutboxContext } from './outbox-context.ts';
 import { SettingsDialog } from './SettingsDialog.tsx';
-import { readLocalCatalog, rememberInventoryQuery, restoreOfflineInventory, searchLocalInventory } from './offline-inventory.ts';
+import { isItemPinned, readLocalCatalog, rememberInventoryQuery, restoreOfflineInventory, searchLocalInventory, setItemPinned } from './offline-inventory.ts';
 import { syncPhase } from './offline-state.ts';
 import type { AccountIdentity } from './offline-state.ts';
 import type { AppShell } from './use-app-shell.ts';
 import { withDeadline } from './request-deadline.ts';
 import { createMediaApi } from './inventory-media.ts';
 import { downloadBlob } from './object-export.ts';
+import type { ArchivePlan } from './object-archive.ts';
 
 type Props = { identity: AccountIdentity; session: Session | null; shell: AppShell; projectUrl: string; publicKey: string; onSignOut: () => void };
 type ReadStorage = 'restoring' | 'ready' | 'unavailable';
@@ -64,7 +65,9 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const connected = useSyncExternalStore(onlineManager.subscribe, isOnline, isOnline);
   const canRequest = !!session && session.user.id === owner && (!session.expires_at || session.expires_at * 1000 > Date.now());
   const [unreachable, setUnreachable] = useState(false);
-  const usingLocalCopy = !connected || !canRequest || unreachable;
+  const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
+  const connection = !connected ? 'offline' : !canRequest ? 'session' : unreachable ? 'unreachable' : 'online';
+  const usingLocalCopy = connection !== 'online';
   const accessToken = useCallback(async () => {
       const current = latestSession.current;
       if (!accountActive.current || !current || current.user.id !== owner || (current.expires_at && current.expires_at * 1000 <= Date.now())) {
@@ -86,8 +89,11 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
       const { data, error, status } = await withDeadline(async deadline => {
         const reply = await request.abortSignal(deadline);
         if (accountActive.current && !signal?.aborted) {
-          if (reply.status === 0 || reply.status >= 502) setUnreachable(true);
-          else if (reply.status > 0) setUnreachable(false);
+          if (reply.status === 0 || reply.status >= 500) setUnreachable(true);
+          else if (!reply.error) {
+            setUnreachable(false);
+            setConfirmedAt(Date.now());
+          }
         }
         return reply;
       }, signal);
@@ -124,13 +130,20 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const [protectedWork, setProtectedWork] = useState(false);
   const [categoryProtected, setCategoryProtected] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [settingsUpload, setSettingsUpload] = useState(false);
   const archiveController = useRef<AbortController | null>(null);
-  const protectedAny = protectedWork || categoryProtected || archiving;
+  const protectedAny = protectedWork || categoryProtected || archiving || settingsUpload;
   const queryId = useId();
 
   const list = useQuery({ queryKey: inventoryKeys.list(owner, search.query, search.offset), queryFn: ({ signal }) => api('search_inventory', { ...search, limit: pageSize }, { signal }), enabled: !usingLocalCopy });
   const categories = useQuery({ queryKey: inventoryKeys.labels(owner), queryFn: ({ signal }) => api('list_labels', { kind: 'category' }, { signal }), enabled: !usingLocalCopy });
   const detail = useQuery({ queryKey: inventoryKeys.item(owner, selection ?? ''), queryFn: ({ signal }) => api('get_item', { item_id: selection! }, { signal }), enabled: !usingLocalCopy && !!selection && selection !== 'new' });
+  const pin = useQuery({
+    queryKey: ['inventory-offline-pin', owner, selection],
+    queryFn: () => isItemPinned(projectUrl, owner, selection!),
+    enabled: storage === 'ready' && !!selection && selection !== 'new',
+    networkMode: 'always', retry: false,
+  });
   const localCatalog = useQuery({
     queryKey: [...inventoryKeys.account(owner), 'local-catalog'],
     queryFn: () => readLocalCatalog(projectUrl, owner),
@@ -143,7 +156,11 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const openDetail = detail.data ?? (usingLocalCopy && selection ? localCatalog.data?.details.get(selection) : undefined);
   const items = usingLocalCopy ? searchLocalInventory(cache, owner, search.query, localCatalog.data?.items) : list.data?.items ?? [];
   const labels = categories.data?.labels ?? [];
-  const synchronization = syncPhase(connected && canRequest, syncRunning, outboxEntries);
+  const synchronization = syncPhase(connection, syncRunning, outboxEntries, confirmedAt);
+  const checkConnection = useRef<() => void>(() => {});
+  checkConnection.current = () => {
+    if (canRequest && navigator.onLine && unreachable && !list.isFetching) void list.refetch();
+  };
 
   useLayoutEffect(() => {
     if (previousSelection.current === selection) return;
@@ -167,7 +184,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     const unsubscribeActivity = outbox.subscribeActivity(setSyncRunning);
     const wake = () => {
       if (document.visibilityState === 'hidden') return;
-      if (navigator.onLine) setUnreachable(false);
+      checkConnection.current();
       void outbox.flush();
     };
     void outbox.flush();
@@ -215,13 +232,22 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   }
   function searchItems(event: FormEvent) { event.preventDefault(); setSearch({ query: query.trim(), offset: 0 }); }
   function created(item: Item) { setProtectedWork(false); setSelection(item.id); setNotice('Gespeichert'); }
+  const offlineAction = openDetail && pin.isSuccess && (detail.data || pin.data) ? {
+    pinned: pin.data,
+    toggle: async () => {
+      await setItemPinned(projectUrl, owner, openDetail.item.id, !pin.data, detail.data, detail.dataUpdatedAt);
+      cache.setQueryData(['inventory-offline-pin', owner, openDetail.item.id], !pin.data);
+      if (usingLocalCopy) void localCatalog.refetch({ cancelRefetch: true });
+      setNotice(pin.data ? 'Offline-Markierung entfernt' : 'Objekt und Notizen offline verfügbar');
+    },
+  } : undefined;
 
-  async function archive(task: (signal: AbortSignal) => Promise<void>) {
+  async function archive<T>(task: (signal: AbortSignal) => Promise<T>) {
     if (archiveController.current || usingLocalCopy) throw new Error('Das Objektarchiv ist gerade nicht verfügbar.');
     const controller = new AbortController();
     archiveController.current = controller;
     setArchiving(true);
-    try { await task(controller.signal); }
+    try { return await task(controller.signal); }
     finally { archiveController.current = null; if (accountActive.current) setArchiving(false); }
   }
 
@@ -238,15 +264,32 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     });
   }
 
-  async function importArchive(file: File) {
-    await archive(async signal => {
-      const { restoreObjectArchive } = await import('./object-archive.ts');
-      const item = await restoreObjectArchive(file, api, mediaApi, signal);
-      signal.throwIfAborted();
-      await Promise.all([
-        cache.invalidateQueries({ queryKey: inventoryKeys.item(owner, item.id), exact: true }),
-        cache.invalidateQueries({ queryKey: ['inventory-media', owner, item.id], exact: true }),
-      ]);
+  async function checkArchive(file: File) {
+    return archive(async signal => {
+      const { archiveCommand, inspectObjectArchive } = await import('./object-archive.ts');
+      return inspectObjectArchive(file, archiveCommand(client), signal);
+    });
+  }
+
+  async function importArchive(plan: ArchivePlan, target?: string) {
+    return archive(async signal => {
+      let itemId: string | undefined;
+      try {
+        const { archiveCommand, restoreObjectArchive } = await import('./object-archive.ts');
+        const result = await restoreObjectArchive(plan, target, archiveCommand(client), api, mediaApi, signal, id => { itemId = id; });
+        return result.alreadyCompleted ? 'Dieses Archiv wurde bereits übernommen.' : 'Objektarchiv übernommen.';
+      } catch (reason) {
+        if (itemId) throw new Error('Import ausstehend. Wähle dieselbe ZIP-Datei erneut.', { cause: reason });
+        throw reason;
+      } finally {
+        if (accountActive.current) {
+          void cache.invalidateQueries({ queryKey: inventoryKeys.lists(owner) });
+          if (itemId) {
+            void cache.invalidateQueries({ queryKey: inventoryKeys.item(owner, itemId), exact: true });
+            void cache.invalidateQueries({ queryKey: ['inventory-media', owner, itemId], exact: true });
+          }
+        }
+      }
     });
   }
 
@@ -256,15 +299,27 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
       <div className="actions">
       <button className="new-object" disabled={protectedWork || selection === 'new'} onClick={() => open('new')}><span aria-hidden="true">+</span> Objekt</button>
       <SettingsDialog email={identity.email} open={settingsOpen} onOpen={setSettingsOpen} onSignOut={onSignOut} signOutDisabled={protectedAny || syncRunning}
-        entries={outboxEntries} storageError={storageError || readError} onSync={() => outbox.flush()} onDiscard={id => outbox.discardBlocked(id)}
+        entries={outboxEntries} storageError={storageError || readError} confirmedAt={confirmedAt}
+        onSync={async () => {
+          if (unreachable || confirmedAt === null || !outboxEntries.some(entry => entry.status === 'pending')) {
+            await list.refetch({ cancelRefetch: false });
+          }
+          await outbox.flush();
+        }} onDiscard={id => outbox.discardBlocked(id)}
         onResolveConflict={(id, revision, changes) => outbox.resolveConflict(id, revision, changes)}
         onLoadConflict={usingLocalCopy ? undefined : async itemId => (await api('get_item', { item_id: itemId })).item}
         categoryName={id => labels.find(label => label.id === id)?.name ?? 'Kategorie nicht verfügbar'}
+        uploads={{ scope: projectUrl + '/' + owner, api: mediaApi, online: !usingLocalCopy,
+          locked: protectedWork || archiving, onBusy: setSettingsUpload,
+          onConfirmed: file => { void cache.invalidateQueries({ queryKey: ['inventory-media', owner, file.item_id], exact: true }); },
+          titleFor: id => items.find(item => item.id === id)?.title,
+        }}
+        onCheckArchive={usingLocalCopy || protectedAny ? undefined : checkArchive}
         onImportArchive={usingLocalCopy || protectedAny ? undefined : importArchive}
         synchronization={synchronization} shell={shell} updateDisabled={protectedAny || syncRunning} />
     </div></div>
     {notice && <p role="status" className="saved-toast">{notice}</p>}
-    {usingLocalCopy && <p className="connection-state state-message" role="status"><span aria-hidden="true"/>{!connected ? 'Offline · lokale Kopie' : !canRequest ? 'Lokale Kopie · Anmeldung wird benötigt' : 'Verbindung gestört · lokale Kopie'}</p>}
+    {usingLocalCopy && <p className="connection-state state-message" role="status"><span aria-hidden="true"/>{connection === 'offline' ? 'Offline · lokale Kopie' : connection === 'session' ? 'Lokale Kopie · Anmeldung wird benötigt' : 'Verbindung gestört · lokale Kopie'}</p>}
     <div className="workspace-grid"><aside className="collection-panel" aria-label="Inventarliste">
       <form onSubmit={searchItems} className="search-form">
         <label className="sr-only" htmlFor={queryId}>Inventar durchsuchen</label>
@@ -279,10 +334,11 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
         return <li key={item.id}><button className="item-row" aria-pressed={selection === item.id} disabled={protectedWork} onClick={() => open(item.id)}>
           <span className="item-number">#{item.inventory_number}</span>
           <strong>{item.title}</strong>
+          {item.archive_import_pending && <span className="item-subtitle archive-pending">Import ausstehend</span>}
           {subtitle && <span className="item-subtitle">{subtitle}</span>}
           {label && <span className="category-label"><i style={{ backgroundColor: label.color }} />{label.name}</span>}
         </button></li>;
-      })}</ul> : <p className="compact-status">{usingLocalCopy && (storage === 'unavailable' || localCatalog.isError) ? 'Lokale Kopie nicht verfügbar' : search.query ? 'Keine Treffer' : usingLocalCopy && !list.data ? 'Keine lokale Objektliste' : 'Keine Objekte'}</p>}
+      })}</ul> : <p className="compact-status">{usingLocalCopy && (storage === 'unavailable' || localCatalog.isError) ? 'Lokale Kopie nicht verfügbar' : search.query ? (usingLocalCopy ? 'Keine Treffer im lokalen Bestand' : 'Keine Treffer') : usingLocalCopy && !list.data ? 'Keine lokale Objektliste' : 'Keine Objekte'}</p>}
       {!usingLocalCopy && list.error && list.data && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}
       {!usingLocalCopy && (search.offset > 0 || items.length === pageSize) && <nav className="pagination" aria-label="Ergebnisseiten"><button className="quiet small" disabled={list.isFetching || search.offset === 0} onClick={() => setSearch(value => ({ ...value, offset: Math.max(0, value.offset - pageSize) }))}>Zurück</button><span className="muted">{Math.floor(search.offset / pageSize) + 1}</span><button className="quiet small" disabled={list.isFetching || !!list.error || items.length < pageSize || search.offset >= 100000} onClick={() => setSearch(value => ({ ...value, offset: value.offset + pageSize }))}>Weiter</button></nav>}
       <details className="category-disclosure"><summary>Kategorien</summary><CategoryCreator api={api} onCreated={() => setNotice('Gespeichert')} onProtected={setCategoryProtected} /></details>
@@ -290,7 +346,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     </aside>
     {selection && <div className="workspace-detail">
       {selection === 'new' ? <NewItem api={api} labels={labels} onCreated={created} onCancel={() => { setProtectedWork(false); setSelection(null); }} onProtected={protectEditor} />
-        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} onArchive={usingLocalCopy ? undefined : () => exportArchive(openDetail.item.id)} media={{ api: mediaApi, owner, projectUrl, email: identity.email, online: !usingLocalCopy }} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
+        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} onArchive={usingLocalCopy ? undefined : () => exportArchive(openDetail.item.id)} offline={offlineAction} media={{ api: mediaApi, owner, projectUrl, email: identity.email, online: !usingLocalCopy }} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
         : usingLocalCopy ? <p className="state-message" role="status">Dieses Objekt hat noch keine lokale Detailansicht.</p>
         : detail.isPending ? <p className="state-message" role="status">Laden …</p>
         : detail.error ? <div><p role="alert" className="error">{detail.error.message}</p><button className="quiet" onClick={() => void detail.refetch()}>Erneut laden</button></div> : null}

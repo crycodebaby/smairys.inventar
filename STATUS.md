@@ -1,5 +1,14 @@
 # Stand am 26. November 2026
 
+## Synchronisierung, Uploads, Offline-Details und Archive
+
+- Startseite und Einstellungen zeigen bei Serverausfall denselben Zustand. Der letzte bestätigte Serverkontakt und offene Textaufträge stehen getrennt in den Einstellungen.
+- Einstellungen › Uploads zeigt die lokale Warteschlange pro Konto samt Dateigröße und Objekt. Einzelne Uploads lassen sich dort fortsetzen, pausieren oder verwerfen. Ein Transfer kann länger als 45 Sekunden dauern, solange regelmäßig neue Bytes übertragen werden. 45 Sekunden Stillstand pausieren die Übertragung.
+- Die erste unfiltrierte Liste bleibt bei vielen Suchabfragen im Offline-Bestand. Bis zu fünf markierte Objekte bleiben mit ihren Notizen gerätebezogen verfügbar, solange der Browser die App-Daten aufbewahrt. Originaldateien werden beim Öffnen online geladen.
+- ZIP-Importe speichern Ziel und Abschluss in Supabase. „Import ausstehend“ bleibt bei einer Unterbrechung geräteübergreifend sichtbar. Dieselbe ZIP setzt am bestehenden Objekt fort. Bei einer neuen Fassung kann der Nutzer Dateien und Notizen ergänzen oder die Fassung als Kopie anlegen. Ein mit der früheren App importierter Bestand kann über dieselbe ursprüngliche ZIP zugeordnet werden.
+- Supabase-Migration 20261126095639 ist angewendet. Der SQL-Test mit Rollback prüft Wiederaufnahme, Versionszuordnung, falsches Ziel sowie den Ausschluss anonymer, delegierter und abgelaufener Sitzungen. Die interne Job-Tabelle hat keine direkten Clientrechte und bleibt mit RLS ohne Client-Policy geschlossen.
+- Die Gegenproben umfassen TypeScript-Build, 41 automatisierte Tests mit simuliertem Zeitablauf, Playwright mit Touch-Viewport und simuliertem Supabase sowie PostgreSQL-Tests mit Rollback. Die Geräteabnahme in Safari und als Homescreen-App auf iPhone/iPad steht aus.
+
 ## Live eingerichtet und überprüft
 
 - Vercel-Projekt smairys-inventar, ID prj_3FdWUXoXeRBzUcO8CDKO51U7mDYg, ist im Hobby-Team robin-schmeiries-projects mit GitHub main verbunden. Node.js 24.x, Vite, npm ci, npm run build und dist sind eingerichtet; die drei öffentlichen VITE-Konfigurationswerte sind hinterlegt.

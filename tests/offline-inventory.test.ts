@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createInventoryQueryClient, inventoryKeys } from '../src/inventory-cache.ts';
-import { clearOfflineInventory, readLocalCatalog, rememberInventoryQuery, restoreOfflineInventory, searchLocalInventory } from '../src/offline-inventory.ts';
+import { clearOfflineInventory, isItemPinned, readLocalCatalog, rememberInventoryQuery, restoreOfflineInventory, searchLocalInventory, setItemPinned } from '../src/offline-inventory.ts';
 import { accessTransition, rememberedIdentity, syncPhase } from '../src/offline-state.ts';
 
 const project = 'https://test.supabase.co';
@@ -67,6 +67,32 @@ test('remembered identity is scoped to the current project and explicit sign-out
   const local = accessTransition({ kind: 'starting' }, { type: 'local', remembered });
   assert.equal(local.kind, 'local');
   assert.equal(accessTransition(local, { type: 'signed-out' }).kind, 'guest');
-  assert.equal(syncPhase(false, true, []), 'offline');
-  assert.equal(syncPhase(true, true, []), 'working');
+  assert.equal(syncPhase('offline', true, [], Date.now()), 'offline');
+  assert.equal(syncPhase('unreachable', false, [], Date.now()), 'unreachable');
+  assert.equal(syncPhase('online', false, [], null), 'unverified');
+  assert.equal(syncPhase('online', false, [], Date.now()), 'clear');
+  assert.equal(syncPhase('online', true, [], Date.now()), 'working');
+});
+
+test('search churn keeps the first unfiltered list and selected detail survives ordinary expiry', async () => {
+  const owner = crypto.randomUUID();
+  const cache = createInventoryQueryClient();
+  const base = inventoryKeys.list(owner, '', 0);
+  const key = inventoryKeys.item(owner, item.id);
+  const now = Date.now();
+  const detail = { item, notes: [] };
+  await rememberInventoryQuery(project, owner, base, { items: [item] }, now - 100);
+  for (let index = 0; index < 12; index++) {
+    await rememberInventoryQuery(project, owner, inventoryKeys.list(owner, 'Suche ' + index, 0), { items: [] }, now + index);
+  }
+  assert.equal(await restoreOfflineInventory(cache, project, owner), 8);
+  assert.deepEqual(cache.getQueryData(base), { items: [item] });
+  await setItemPinned(project, owner, item.id, true, detail, now - 8 * 86400000);
+  assert.equal(await isItemPinned(project, owner, item.id), true);
+  assert.deepEqual((await readLocalCatalog(project, owner)).details.get(item.id), detail);
+  await rememberInventoryQuery(project, owner, key, { item: { ...item, revision: 2 }, notes: [] }, now);
+  assert.equal(await isItemPinned(project, owner, item.id), true);
+  await setItemPinned(project, owner, item.id, false, undefined, 0);
+  assert.equal(await isItemPinned(project, owner, item.id), false);
+  cache.clear();
 });

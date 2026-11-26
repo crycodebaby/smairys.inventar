@@ -14,6 +14,7 @@ type Snapshot = {
   data: unknown;
   updatedAt: number;
   bytes: number;
+  pinned?: boolean;
 };
 interface OfflineDatabase extends DBSchema {
   snapshots: { key: string; value: Snapshot; indexes: { scope: string } };
@@ -21,6 +22,7 @@ interface OfflineDatabase extends DBSchema {
 const lifetime = 7 * 24 * 60 * 60 * 1000;
 const maxBytes = 2 * 1024 * 1024;
 const maxEntryBytes = 256 * 1024;
+const maxPinnedItems = 5;
 const limits: Record<ReadCommand, number> = { search_inventory: 8, get_item: 40, list_labels: 4 };
 let database: Promise<IDBPDatabase<OfflineDatabase>> | undefined;
 
@@ -61,12 +63,19 @@ function validated(kind: ReadCommand, key: QueryKey, data: unknown) {
   return list;
 }
 
+function priority(entry: Snapshot) {
+  const filter = entry.kind === 'search_inventory' ? entry.queryKey[3] as { query: string; offset: number } : null;
+  if (filter?.query === '' && filter.offset === 0) return 2;
+  if (entry.pinned && entry.kind === 'get_item') return 1;
+  return 0;
+}
+
 function selectEntries(entries: Snapshot[], now: number) {
   let bytes = 0;
   const counts = { search_inventory: 0, get_item: 0, list_labels: 0 };
-  return entries.filter(entry => entry.updatedAt > now - lifetime && entry.updatedAt <= now + 60_000
+  return entries.filter(entry => (entry.pinned || entry.updatedAt > now - lifetime) && entry.updatedAt <= now + 60_000
     && entry.bytes > 0 && entry.bytes <= maxEntryBytes)
-    .sort((a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key))
+    .sort((a, b) => priority(b) - priority(a) || b.updatedAt - a.updatedAt || a.key.localeCompare(b.key))
     .filter(entry => {
       if (counts[entry.kind] >= limits[entry.kind] || bytes + entry.bytes > maxBytes) return false;
       counts[entry.kind]++;
@@ -104,13 +113,54 @@ export async function rememberInventoryQuery(project: string, owner: string, que
   const transaction = db.transaction('snapshots', 'readwrite');
   const existing = await transaction.store.index('scope').getAll(scope);
   const previous = existing.find(entry => entry.key === key);
-  const entry: Snapshot = { key, scope, kind, queryKey, data: parsed, updatedAt, bytes };
+  const entry: Snapshot = { key, scope, kind, queryKey, data: parsed, updatedAt, bytes, pinned: previous?.pinned };
   const next = selectEntries([...existing.filter(value => value.key !== key), previous && previous.updatedAt > updatedAt ? previous : entry], Date.now());
   const retained = new Set(next.map(value => value.key));
   for (const value of existing) if (!retained.has(value.key)) await transaction.store.delete(value.key);
   if (retained.has(key) && (!previous || previous.updatedAt <= updatedAt)) await transaction.store.put(entry);
   await transaction.done;
   return retained.has(key);
+}
+
+export async function isItemPinned(project: string, owner: string, itemId: string) {
+  const scope = scopeFor(project, owner);
+  const entry = await (await open()).get('snapshots', scope + ':' + JSON.stringify(inventoryKeys.item(owner, itemId)));
+  return entry?.pinned === true;
+}
+
+export async function setItemPinned(project: string, owner: string, itemId: string, pinned: boolean, data: unknown, updatedAt: number) {
+  const scope = scopeFor(project, owner);
+  const queryKey = inventoryKeys.item(owner, itemId);
+  const key = scope + ':' + JSON.stringify(queryKey);
+  const db = await open();
+  const tx = db.transaction('snapshots', 'readwrite', { durability: 'strict' });
+  const existing = await tx.store.index('scope').getAll(scope);
+  const previous = existing.find(entry => entry.key === key);
+  if (!pinned) {
+    if (previous) await tx.store.put({ ...previous, pinned: false });
+    await tx.done;
+    return;
+  }
+  if (!previous?.pinned && existing.filter(entry => entry.pinned).length >= maxPinnedItems) {
+    await tx.done;
+    throw new Error('Bis zu fünf Objekte können offline bereitgehalten werden.');
+  }
+  const snapshot = validated('get_item', queryKey, data);
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).byteLength;
+  if (bytes > maxEntryBytes || !updatedAt) {
+    await tx.done;
+    throw new Error('Diese Detailansicht passt nicht in den Offline-Speicher.');
+  }
+  const entry: Snapshot = previous && previous.updatedAt > updatedAt ? { ...previous, pinned: true }
+    : { key, scope, kind: 'get_item', queryKey, data: snapshot, updatedAt, bytes, pinned: true };
+  const retained = new Set(selectEntries([...existing.filter(value => value.key !== key), entry], Date.now()).map(value => value.key));
+  if (!retained.has(key)) {
+    await tx.done;
+    throw new Error('Die Detailansicht konnte nicht offline gespeichert werden.');
+  }
+  await tx.store.put(entry);
+  for (const value of existing) if (!retained.has(value.key)) await tx.store.delete(value.key);
+  await tx.done;
 }
 
 export async function clearOfflineInventory(project: string, owner: string) {

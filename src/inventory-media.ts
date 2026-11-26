@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { withDeadline } from './request-deadline.ts';
+import { withDeadline, withUploadInactivity } from './request-deadline.ts';
 
 const bucketName = 'inventory-media';
 const mediaTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'] as const;
@@ -110,7 +110,9 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
     signal.throwIfAborted();
     const origin = new URL(projectUrl);
     if (origin.hostname.endsWith('.supabase.co')) origin.hostname = origin.hostname.replace(/\.supabase\.co$/, '.storage.supabase.co');
-    await withDeadline(s => new Promise<void>((resolve, reject) => {
+    await withUploadInactivity((s, advanced) => new Promise<void>((resolve, reject) => {
+      let observed = 0;
+      let transmitted = 0;
       const upload = new Upload(file, {
         endpoint: new URL('/storage/v1/upload/resumable', origin).href,
         chunkSize: resumableThreshold,
@@ -122,7 +124,13 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
         onBeforeRequest: async request => { request.setHeader('Authorization', 'Bearer ' + await accessToken()); },
         onError: error => { cleanup(); reject(error); },
         onSuccess: () => { cleanup(); resolve(); },
-        onProgress: (sent, total) => progress(Math.floor(sent / total * 100)),
+        onProgress: (sent, total) => {
+          // A retry can resume at a lower confirmed offset and still transmit real bytes.
+          transmitted += Math.max(0, sent - observed);
+          observed = sent;
+          advanced(transmitted);
+          progress(Math.floor(sent / total * 100));
+        },
       });
       function cleanup() { s.removeEventListener('abort', abort); }
       function abort() { void upload.abort().catch(() => {}); cleanup(); reject(s.reason); }
@@ -133,20 +141,34 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
         if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
         upload.start();
       }).catch(() => { if (!s.aborted) upload.start(); });
-    }), signal, 240_000);
+    }), signal);
   }
 
-  async function sendSmall(path: string, file: Blob, type: string, signal: AbortSignal) {
+  async function sendSmall(path: string, file: Blob, type: string, signal: AbortSignal, progress?: (percent: number) => void) {
     const token = await accessToken();
     const body = new FormData();
     body.append('cacheControl', '60');
     body.append('', file.slice(0, file.size, type));
     const url = new URL('/storage/v1/object/' + bucketName + '/' + path, projectUrl);
-    const response = await withDeadline(s => fetch(url, {
-      method: 'POST', headers: { apikey: publicKey, Authorization: 'Bearer ' + token, 'x-upsert': 'false' },
-      body, signal: s,
-    }), signal, 45_000);
-    if (!response.ok) throw new Error('Dateiübertragung fehlgeschlagen.');
+    await withUploadInactivity((s, advanced) => new Promise<void>((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      const fail = () => reject(new Error('Dateiübertragung fehlgeschlagen.'));
+      const abort = () => { reject(s.reason); request.abort(); };
+      request.upload.addEventListener('progress', event => {
+        advanced(event.loaded);
+        if (event.lengthComputable) progress?.(Math.floor(event.loaded / event.total * 100));
+      });
+      request.addEventListener('loadend', () => s.removeEventListener('abort', abort), { once: true });
+      request.addEventListener('load', () => request.status >= 200 && request.status < 300 ? resolve() : fail(), { once: true });
+      request.addEventListener('error', fail, { once: true });
+      request.open('POST', url.href);
+      request.setRequestHeader('apikey', publicKey);
+      request.setRequestHeader('Authorization', 'Bearer ' + token);
+      request.setRequestHeader('x-upsert', 'false');
+      s.addEventListener('abort', abort, { once: true });
+      try { request.send(body); }
+      catch (reason) { s.removeEventListener('abort', abort); reject(reason); }
+    }), signal);
   }
 
   return {
@@ -231,7 +253,7 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
       let transmissionError: unknown;
       try {
         if (file.size > resumableThreshold) await sendResumable(media, file, signal, percent => update('sending', percent));
-        else await sendSmall(media.original_path, file, type, signal);
+        else await sendSmall(media.original_path, file, type, signal, percent => update('sending', percent));
       } catch (reason) { transmissionError = reason; }
       signal.throwIfAborted();
       if (!transmissionError) {
