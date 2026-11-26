@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "smairys-inventar",
+  "version": "0.1.0",
+  "description": "Musikalischen Nachlass durchsuchen, Gegenstände erfassen und Lothars Notizen zuordnen.",
+  "author": { "name": "Smairys" },
+  "repository": "https://github.com/crycodebaby/smairys.inventar"
+}

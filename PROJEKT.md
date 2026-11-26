@@ -2,7 +2,7 @@
 
 Der technische Projektname ist smairys.inventar. Festgelegt sind Supabase Free als Backend und https://inventar.smairys.de als Zieladresse. Die DNS-Verwaltung erfolgt über Cloudflare.
 
-Stand 26. November 2026. Dieses Dokument beschreibt die Grundlage für die geplante Inventar-Web-App. Die SQLite-Datei ist ein erster lokaler Katalog. Web-Oberfläche, Hosting und Synchronisation stehen noch aus.
+Stand 26. November 2026. Dieses Dokument beschreibt das Produktziel. Die SQLite-Datei ist ein erster lokaler Katalog. Die erste Web-Anmeldung und die Befehlsschicht sind implementiert. Den aktuellen Umsetzungsstand beschreibt STATUS.md.
 
 ## Zweck
 

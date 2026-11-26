@@ -1,0 +1,6 @@
+project_id = "smairys-inventar"
+
+[functions.inventory]
+# The handler verifies user JWTs and the MCP audience itself.
+verify_jwt = false
+entrypoint = "./functions/inventory/index.ts"

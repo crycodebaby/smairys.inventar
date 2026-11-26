@@ -13,7 +13,7 @@ Inventar, Dokumentation und Recherche zum musikalischen Nachlass von Lothar. Gep
 
 ## Projektstand
 
-Das Repository enthält die Projektgrundlage, das SQLite-Startschema und die technischen Verträge. App-Code, Hosting und Cloud-Anbindung folgen in der Umsetzung. Der aktuelle Stand steht in [STATUS.md](STATUS.md).
+Das Repository enthält die erste React-Web-App mit Anmeldung und OAuth-Zustimmungsansicht, sieben Inventarbefehle, einen MCP-Server und optionale Seitenwerkzeuge. Die Befehlsschnittstelle ist im bestehenden Supabase-Projekt eingerichtet. Web-Hosting, OAuth-Freischaltung und die persönliche ChatGPT-Verknüpfung stehen aus. Der aktuelle Stand steht in [STATUS.md](STATUS.md).
 
 ## Dokumentation
 
@@ -25,6 +25,7 @@ Das Repository enthält die Projektgrundlage, das SQLite-Startschema und die tec
 | [docs/DATENVERTRAG.md](docs/DATENVERTRAG.md) | Datenintegrität, Uploads und Synchronisation |
 | [docs/ABNAHME.md](docs/ABNAHME.md) | Praktische Abnahmetests |
 | [docs/QUELLEN.md](docs/QUELLEN.md) | Technische Primärquellen |
+| [docs/CHATGPT.md](docs/CHATGPT.md) | Inventarbefehle, MCP, Seitenwerkzeuge und Verbindungsstatus |
 | [schema.sql](schema.sql) | Schema des lokalen Startkatalogs |
 
 ## Lokale Bestandsdaten
@@ -37,4 +38,10 @@ Die Themenordner, Originalfotos und `inventar.sqlite` bilden den lokalen Bestand
 
 Die Auswahl des Offline-Abgleichs steht aus. Die Entscheidung für Supabase Free umfasst noch keine Auswahl eines zusätzlichen Synchronisationsdienstes.
 
-Der Cloudflare-DNS-Eintrag braucht den konkreten Zielwert des später gewählten Hostings. Dieser Wert wird beim Hosting-Setup dokumentiert. Build- und Startbefehle werden mit dem ausführbaren App-Gerüst in `package.json` angelegt.
+Der Cloudflare-DNS-Eintrag braucht den konkreten Zielwert des gewählten Hostings. Dieser Wert wird beim Hosting-Setup dokumentiert.
+
+## Lokal ausführen
+
+Mit Node.js ab Version 24 und npm ci die fixierten Abhängigkeiten installieren. Die Konfiguration aus .env.example in .env.local ergänzen. npm run dev startet die Web-App. npm run build erstellt dist und prüft die Typen. npm test führt die automatisierten Tests aus.
+
+Der Supabase-Projektbezug lautet xywnhifzahwcmclrfsil. Der MCP-Endpunkt und die restlichen Einrichtungsschritte stehen in [docs/CHATGPT.md](docs/CHATGPT.md).

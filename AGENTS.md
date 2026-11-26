@@ -13,6 +13,7 @@ Lies zuerst STATUS.md und PROJEKT.md. Lade weitere Dokumente passend zur Aufgabe
 | Architektur oder Bibliotheken | docs/ARCHITEKTUR.md |
 | Datenmodell, Import, Fotos, Rechte oder Synchronisation | docs/DATENVERTRAG.md |
 | Umsetzung oder Überprüfung eines Ablaufs | docs/ABNAHME.md |
+| ChatGPT, MCP, OAuth oder Seitenwerkzeuge | docs/CHATGPT.md |
 | Begründung externer technischer Aussagen | docs/QUELLEN.md |
 
 STATUS.md beschreibt den tatsächlichen Stand. Architekturentscheidungen enthalten ihren Status und ihre Änderungskriterien. PROJEKT.md enthält die Produktanforderungen. schema.sql beschreibt ausschließlich den bestehenden SQLite-Startkatalog. Während der Cloud-Umsetzung werden versionierte Migrationen die maßgebliche Quelle für das Serverschema.
@@ -32,4 +33,4 @@ STATUS.md beschreibt den tatsächlichen Stand. Architekturentscheidungen enthalt
 
 ## Ausführung
 
-Aktuell existieren Datenmodell und Startkatalog. Build-, Start- und App-Testbefehle werden beim Anlegen des App-Codes in package.json und STATUS.md dokumentiert. Die SQLite-Datei wird vor Änderungen gesichert und mit PRAGMA integrity_check sowie PRAGMA foreign_key_check geprüft. Ein Import vergleicht zusätzlich relative Dateipfade, Bytezahlen und SHA-256-Werte.
+Node.js ab Version 24 verwenden. npm ci installiert Abhängigkeiten, npm run dev startet die Web-App, npm run build prüft Typen und Build, npm test führt Tests aus. package.json und package-lock.json enthalten die genauen Abhängigkeiten. PostgreSQL-Migrationen liegen in supabase/migrations, der Befehlstest in supabase/tests. Der ältere SQLite-Katalog bleibt ein lokaler Importbestand. Ein Import vergleicht relative Dateipfade, Bytezahlen und SHA-256-Werte.
