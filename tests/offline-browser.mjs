@@ -46,6 +46,7 @@ const notes = [];
 const calls = [];
 const writes = new Map();
 const mediaRecords = new Map();
+const mediaRequests = { list: 0, preview: 0, original: 0 };
 const uploadedPaths = new Set();
 const uploadedBytes = new Map();
 const testPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAIAAAUAAen63NgAAAAASUVORK5CYII=', 'base64');
@@ -142,6 +143,7 @@ try {
     }
     if (url.pathname === '/auth/v1/user') { await route.fulfill({ json: fixtureSession(robin).user, headers }); return; }
     if (url.pathname === '/rest/v1/inventory_media') {
+      mediaRequests.list++;
       assert.equal(url.searchParams.get('item_id'), 'eq.' + objectId);
       await route.fulfill({ json: [...mediaRecords.values()].filter(file => file.uploaded_at), headers });
       return;
@@ -190,6 +192,7 @@ try {
     if (url.pathname.startsWith('/storage/v1/object/authenticated/inventory-media/')) {
       assert.ok(request.headers().authorization.startsWith('Bearer '));
       const path = url.pathname.split('/').slice(6).join('/');
+      mediaRequests[path.endsWith('/preview.jpg') ? 'preview' : 'original']++;
       const bytes = uploadedBytes.get(path);
       assert.ok(bytes);
       await route.fulfill({ body: bytes, contentType: path.endsWith('.jpg') ? 'image/jpeg' : 'image/png', headers });
@@ -227,18 +230,28 @@ try {
   await page.getByRole('tab', { name: 'Medien' }).click();
   await page.getByText('Keine Fotos oder Belege').waitFor();
   const fileInput = page.getByLabel('Dateien hinzufügen');
+  const readsBeforeUploads = mediaRequests.list;
   await fileInput.setInputFiles({ name: 'Falscher Typ.png', mimeType: 'image/png', buffer: Buffer.from('harmless text') });
   await page.getByText('Der Dateiinhalt passt nicht zum Dateityp.').waitFor();
   assert.equal(uploadedPaths.size, 0);
   await fileInput.setInputFiles({ name: 'Typenschild.png', mimeType: 'image/png', buffer: testPng });
   const mediaCard = page.getByRole('button', { name: /Typenschild.png/ });
   await mediaCard.waitFor();
+  await mediaCard.locator('.media-thumb img').waitFor();
   assert.equal(uploadedPaths.size, 2);
   await mediaCard.click();
   const download = page.getByRole('dialog', { name: 'Typenschild.png' }).getByRole('link', { name: 'Original herunterladen' });
   await download.waitFor();
   assert.match(await download.getAttribute('href'), /^blob:/);
   assert.equal(await download.getAttribute('download'), 'Typenschild.png');
+  await page.getByRole('button', { name: 'Datei schließen' }).click();
+  await page.getByRole('tab', { name: 'Objekt' }).click();
+  const previewsBeforeReturn = mediaRequests.preview;
+  await page.getByRole('tab', { name: 'Medien' }).click();
+  await mediaCard.locator('.media-thumb img').waitFor();
+  const previewsOnReturn = mediaRequests.preview - previewsBeforeReturn;
+  await mediaCard.click();
+  await page.getByRole('dialog', { name: 'Typenschild.png' }).waitFor();
   await page.getByRole('button', { name: 'Datei schließen' }).click();
   await fileInput.setInputFiles({ name: 'Kopie.png', mimeType: 'image/png', buffer: testPng });
   await page.getByRole('tabpanel', { name: 'Medien' }).getByText('Gespeichert', { exact: true }).waitFor();
@@ -250,6 +263,14 @@ try {
   assert.equal(tusResumed, true);
   assert.deepEqual(tusChunks, [6 * 1024 * 1024, 128]);
   assert.equal(mediaRecords.size, 2);
+  assert.equal(mediaRequests.list - readsBeforeUploads, 0);
+  assert.equal(previewsOnReturn, 0);
+  assert.equal(mediaRequests.original, 2);
+  assert.deepEqual(calls.slice(0, 3).sort(), ['get_item', 'list_labels', 'search_inventory']);
+  console.log('Anfragen im Medienablauf', JSON.stringify({
+    listAfterUploads: mediaRequests.list - readsBeforeUploads, previewsOnReturn, original: mediaRequests.original,
+    loginAndStartup: calls.slice(0, 3),
+  }));
   await page.getByRole('tab', { name: 'Objekt' }).click();
   console.log('Private Medien, Original und Vorschau, Bestätigung, Deduplizierung und TUS-Übertragung geprüft.');
   assert.equal(await page.getByLabel(/Fundort|Lagerort/).count(), 0);

@@ -80,11 +80,13 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
     const controller = new AbortController();
     uploadControl.current = controller;
     let completed = 0;
+    const confirmed: Media[] = [];
     try {
       for (const file of files) {
-        await api.upload(itemId, file, controller.signal, (phase, percent) => {
+        const media = await api.upload(itemId, file, controller.signal, (phase, percent) => {
           if (alive.current) setUpload({ phase, name: file.name, position: completed + 1, total: files.length, percent });
         });
+        confirmed.push(media);
         completed++;
       }
       if (alive.current) setUpload({ phase: 'done' });
@@ -92,8 +94,28 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
       const message = controller.signal.aborted ? 'Upload pausiert.' : reason instanceof Error ? reason.message : 'Datei konnte nicht gespeichert werden.';
       if (alive.current) setUpload({ phase: 'paused', message, remaining: files.slice(completed) });
     } finally {
+      if (alive.current && confirmed.length) {
+        const current = cache.getQueryState<Media[]>(queryKey);
+        if (current?.data) {
+          const known = new Set(current.data.map(file => file.id));
+          const added = confirmed.filter(file => {
+            if (known.has(file.id)) return false;
+            known.add(file.id);
+            return true;
+          });
+          if (added.length) {
+            await cache.cancelQueries({ queryKey, exact: true });
+            if (alive.current) {
+              cache.setQueryData<Media[]>(queryKey, before => before && [...added, ...before].sort((a, b) =>
+                (b.uploaded_at ?? '').localeCompare(a.uploaded_at ?? '') || a.id.localeCompare(b.id)
+              ), { updatedAt: current.dataUpdatedAt });
+            }
+          }
+        } else {
+          void cache.invalidateQueries({ queryKey, exact: true });
+        }
+      }
       uploadControl.current = null;
-      if (alive.current) void cache.invalidateQueries({ queryKey, exact: true });
     }
   }
 

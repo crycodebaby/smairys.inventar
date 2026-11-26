@@ -5,9 +5,11 @@ insert into auth.users(id,aud,role,email,email_confirmed_at) values
   ('d4f72251-bc6b-4ab1-8ae3-45abe3f14169','authenticated','authenticated','inventory-test-b@example.invalid',now());
 insert into private.inventory_owner(user_id) values ('913e43ee-3fb7-4bfa-b5ec-bd12136df064')
   on conflict (singleton) do update set user_id = excluded.user_id;
+insert into auth.sessions(id,user_id,created_at,updated_at)
+  values ('7df6e020-58e0-4999-946f-d199af38f9e1','913e43ee-3fb7-4bfa-b5ec-bd12136df064',now(),now());
 
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"otp"}]}',true);
+select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"otp"}],"session_id":"7df6e020-58e0-4999-946f-d199af38f9e1"}',true);
 
 do $$
 declare
@@ -94,7 +96,7 @@ $$;
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"password"}]}',true);
+select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"password"}],"session_id":"7df6e020-58e0-4999-946f-d199af38f9e1"}',true);
 do $$
 begin
   if exists (select 1 from public.inventory_items) then raise exception 'Password-authenticated access to inventory'; end if;
@@ -104,10 +106,25 @@ begin
   exception when insufficient_privilege then
     if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;
-  perform set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated"}',true);
+  perform set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","session_id":"7df6e020-58e0-4999-946f-d199af38f9e1"}',true);
   begin
     perform public.inventory_command('search_inventory','{}');
     raise exception 'Command accepted without proof of OTP';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
+end;
+$$;
+reset role;
+delete from auth.sessions where id='7df6e020-58e0-4999-946f-d199af38f9e1';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"otp"}],"session_id":"7df6e020-58e0-4999-946f-d199af38f9e1"}',true);
+do $$
+begin
+  if exists (select 1 from public.inventory_items) then raise exception 'Revoked session can read inventory rows'; end if;
+  begin
+    perform public.inventory_command('search_inventory','{}');
+    raise exception 'Revoked session can call inventory';
   exception when insufficient_privilege then
     if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;

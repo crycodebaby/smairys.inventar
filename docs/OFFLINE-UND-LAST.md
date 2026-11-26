@@ -22,6 +22,18 @@ Bei gleichzeitig geöffneten Tabs bleibt ein Update wartend. Es kann nach Schlie
 
 ## Nachweis
 
+### Medienanfragen im kontrollierten Browsertest
+
+| Ablauf | Vorher | Nachher |
+| --- | ---: | ---: |
+| Zusätzliche Abfragen der Medienliste nach erster Anzeige, über die Testreihe mit ungültiger Datei, Foto, Dateiduplikat und unterbrochenem PDF-Upload | 5 | 0 |
+| Weitere Vorschauanfragen beim Wechsel vom Objekt zurück zum Medienreiter | 1 | 0 |
+| Online-Start und erstes geöffnetes Objekt | 3 | 3 |
+
+Der Start lädt parallel Objektliste und Kategorien. Ein Objektdetail lädt erst nach Auswahl. Der Medienreiter übernimmt neue Einträge aus der bestätigten Serverantwort, sofern die Liste im Cache liegt. Dabei bleibt ihr ursprünglicher Aktualisierungszeitpunkt erhalten. Kleine Vorschauen werden je Arbeitsplatz im RAM vorgehalten, bis zu 24 Dateien beziehungsweise 2 MiB und 90 Sekunden zum Wiederabruf. Bei Abmeldung oder Wechsel zur lokalen Kopie wird der Cache geleert. Zwei Öffnungen eines Originals verursachen weiterhin zwei authentifizierte Downloads.
+
+Die Produktionsstichprobe aus `pg_stat_statements` enthielt 34 Inventar-RPCs mit durchschnittlich 13,6 ms PostgreSQL-Ausführungszeit sowie einen Abruf der Medienliste mit 0,7 ms. Sie umfasst den vorhandenen kleinen Bestand und schließt Transport und Anmeldung aus. Die Daten liefern keinen Anlass für einen neuen Suchindex oder einen zusätzlichen Cache-Dienst.
+
 `npm run build` erzeugt die öffentliche Offline-Hülle. `npm run test:offline-browser` testet sie in einem isolierten Chromium-Fenster mit simuliertem Supabase. Der Test prüft kalten Offline-Neustart nach Vorbereitung, lokale Suche, fehlende Details, dauerhafte Notizaufträge, erneute Verbindung, Kontowechsel, abgelaufene Sitzung, Serverausfall trotz bestehender Netzverbindung, beschädigten Build, Update mit mehreren Tabs und lokale Abmeldung. Die automatisierten Tests decken zusätzlich Datenalter, Speichergrenze pro Eintrag und Kontotrennung ab.
 
 Die Simulation grenzt die App-Logik ab. Die echte Abnahme in Safari und als Homescreen-App auf iPhone/iPad bleibt erforderlich, insbesondere unter Speicherknappheit und nach Beenden durch das Betriebssystem.

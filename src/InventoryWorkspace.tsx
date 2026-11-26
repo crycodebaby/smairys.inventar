@@ -75,6 +75,10 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     accessToken, global: { fetch: (input, init) => withDeadline(signal => fetch(input, { ...init, signal }), init?.signal ?? undefined) },
   }), [projectUrl, publicKey, accessToken]);
   const mediaApi = useMemo(() => createMediaApi(client, projectUrl, publicKey, accessToken), [client, projectUrl, publicKey, accessToken]);
+  useEffect(() => {
+    if (usingLocalCopy) mediaApi.clearPreviews();
+    return () => { if (!usingLocalCopy) mediaApi.clearPreviews(); };
+  }, [mediaApi, usingLocalCopy]);
   const api = useMemo<InventoryApi>(() => {
     const execute = createInventoryApi(async (name, input, signal) => {
       const request = client.rpc('inventory_command', { command_name: name, arguments: input }).retry(false);

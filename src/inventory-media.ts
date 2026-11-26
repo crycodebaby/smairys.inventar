@@ -17,6 +17,9 @@ export type Media = z.infer<typeof mediaSchema>;
 export const maxMediaBytes = 25 * 1024 * 1024;
 const previewBytes = 256 * 1024;
 const resumableThreshold = 6 * 1024 * 1024;
+const previewLifetime = 90_000;
+const previewBudget = 2 * 1024 * 1024;
+const previewCount = 24;
 export const mediaAccept = [...mediaTypes, '.heic', '.heif', '.pdf'].join(',');
 
 export function mediaFileType(file: File) {
@@ -80,6 +83,15 @@ async function previewFor(file: File, type: Media['mime_type'], signal: AbortSig
 export type UploadStage = 'preparing' | 'sending' | 'confirming';
 
 export function createMediaApi(client: SupabaseClient, projectUrl: string, publicKey: string, accessToken: () => Promise<string>) {
+  const previews = new Map<string, { blob: Blob; expiresAt: number }>();
+  let previewSize = 0;
+  let previewGeneration = 0;
+  function removePreview(key: string) {
+    const previous = previews.get(key);
+    if (!previous) return;
+    previewSize -= previous.blob.size;
+    previews.delete(key);
+  }
   async function confirm(id: string, signal: AbortSignal) {
     const { data, error } = await withDeadline(s => client.rpc('inventory_media_confirm', { media_id: id }).retry(false).abortSignal(s), signal);
     if (error?.message === 'MEDIA_FILE_UNCONFIRMED') return null;
@@ -132,6 +144,11 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
   }
 
   return {
+    clearPreviews() {
+      previewGeneration++;
+      previews.clear();
+      previewSize = 0;
+    },
     async list(itemId: string, signal: AbortSignal) {
       const { data, error } = await withDeadline(s => client.from('inventory_media').select(
         'id,item_id,owner_id,original_name,mime_type,byte_count,sha256,original_path,preview_path,has_preview,uploaded_at',
@@ -144,6 +161,18 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
       const type = preview ? 'image/jpeg' : media.mime_type;
       const limit = preview ? previewBytes : media.byte_count;
       const token = await accessToken();
+      signal.throwIfAborted();
+      const generation = previewGeneration;
+      if (preview) {
+        const now = Date.now();
+        for (const [key, value] of previews) if (value.expiresAt <= now) removePreview(key);
+        const entry = previews.get(path);
+        if (entry) {
+          previews.delete(path);
+          previews.set(path, entry);
+          return entry.blob;
+        }
+      }
       const url = new URL('/storage/v1/object/authenticated/' + bucketName + '/' + path, projectUrl);
       const file = await withDeadline(async s => {
         const response = await fetch(url, { signal: s, cache: 'no-store', redirect: 'error',
@@ -168,6 +197,16 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
         throw new Error('Datei stimmt nicht mit dem gespeicherten Original überein.');
       }
       signal.throwIfAborted();
+      if (preview && generation === previewGeneration) {
+        removePreview(path);
+        previews.set(path, { blob: file, expiresAt: Date.now() + previewLifetime });
+        previewSize += file.size;
+        while (previewSize > previewBudget || previews.size > previewCount) {
+          const oldest = previews.keys().next().value;
+          if (oldest === undefined) break;
+          removePreview(oldest);
+        }
+      }
       return file;
     },
     async upload(itemId: string, file: File, signal: AbortSignal, update: (phase: UploadStage, percent?: number) => void) {

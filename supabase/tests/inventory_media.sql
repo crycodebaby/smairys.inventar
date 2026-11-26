@@ -5,8 +5,10 @@ insert into auth.users(id,aud,role,email,email_confirmed_at) values
   ('c4cbaba3-3ea8-4dad-8dad-82cfabef1966','authenticated','authenticated','inventory-media-b@example.invalid',now());
 insert into private.inventory_owner(user_id) values ('af6dd23e-ab0c-494e-a7f1-d7511549c73e')
   on conflict (singleton) do update set user_id = excluded.user_id;
+insert into auth.sessions(id,user_id,created_at,updated_at)
+  values ('5c95daad-b026-4223-820d-f489c9360bdd','af6dd23e-ab0c-494e-a7f1-d7511549c73e',now(),now());
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}]}',true);
+select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}],"session_id":"5c95daad-b026-4223-820d-f489c9360bdd"}',true);
 
 do $$
 declare
@@ -83,7 +85,7 @@ begin
 end;
 $$;
 
-select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}],"client_id":"test-mcp"}',true);
+select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}],"session_id":"5c95daad-b026-4223-820d-f489c9360bdd","client_id":"test-mcp"}',true);
 do $$
 begin
   if exists (select 1 from public.inventory_media) or exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
@@ -93,6 +95,24 @@ begin
     perform public.inventory_media_confirm(current_setting('inventory.media_id')::uuid);
     raise exception 'Delegated text client can confirm media';
   exception when sqlstate '28000' then null;
+  end;
+end;
+$$;
+
+reset role;
+delete from auth.sessions where id='5c95daad-b026-4223-820d-f489c9360bdd';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}],"session_id":"5c95daad-b026-4223-820d-f489c9360bdd"}',true);
+do $$
+begin
+  if exists (select 1 from public.inventory_media) or exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
+    raise exception 'Revoked session can download a private attachment';
+  end if;
+  begin
+    perform public.inventory_media_confirm(current_setting('inventory.media_id')::uuid);
+    raise exception 'Revoked session can confirm media';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;
 end;
 $$;
