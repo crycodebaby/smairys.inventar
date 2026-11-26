@@ -20,6 +20,7 @@ import type { AccountIdentity } from './offline-state.ts';
 import type { AppShell } from './use-app-shell.ts';
 import { withDeadline } from './request-deadline.ts';
 import { createMediaApi } from './inventory-media.ts';
+import { downloadBlob } from './object-export.ts';
 
 type Props = { identity: AccountIdentity; session: Session | null; shell: AppShell; projectUrl: string; publicKey: string; onSignOut: () => void };
 type ReadStorage = 'restoring' | 'ready' | 'unavailable';
@@ -122,7 +123,9 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const [notice, setNotice] = useState('');
   const [protectedWork, setProtectedWork] = useState(false);
   const [categoryProtected, setCategoryProtected] = useState(false);
-  const protectedAny = protectedWork || categoryProtected;
+  const [archiving, setArchiving] = useState(false);
+  const archiveController = useRef<AbortController | null>(null);
+  const protectedAny = protectedWork || categoryProtected || archiving;
   const queryId = useId();
 
   const list = useQuery({ queryKey: inventoryKeys.list(owner, search.query, search.offset), queryFn: ({ signal }) => api('search_inventory', { ...search, limit: pageSize }, { signal }), enabled: !usingLocalCopy });
@@ -147,7 +150,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     previousSelection.current = selection;
     if (usesSinglePane()) window.scrollTo({ top: selection ? 0 : listScroll.current, behavior: 'instant' });
   }, [selection]);
-  useEffect(() => { accountActive.current = true; return () => { accountActive.current = false; }; }, []);
+  useEffect(() => { accountActive.current = true; return () => { accountActive.current = false; archiveController.current?.abort(); }; }, []);
   useEffect(() => {
     let active = true;
     const detach = cache.getQueryCache().subscribe(event => {
@@ -213,6 +216,40 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   function searchItems(event: FormEvent) { event.preventDefault(); setSearch({ query: query.trim(), offset: 0 }); }
   function created(item: Item) { setProtectedWork(false); setSelection(item.id); setNotice('Gespeichert'); }
 
+  async function archive(task: (signal: AbortSignal) => Promise<void>) {
+    if (archiveController.current || usingLocalCopy) throw new Error('Das Objektarchiv ist gerade nicht verfügbar.');
+    const controller = new AbortController();
+    archiveController.current = controller;
+    setArchiving(true);
+    try { await task(controller.signal); }
+    finally { archiveController.current = null; if (accountActive.current) setArchiving(false); }
+  }
+
+  async function exportArchive(itemId: string) {
+    await archive(async signal => {
+      const { exportObjectArchive } = await import('./object-archive.ts');
+      const [detail, freshLabels] = await Promise.all([
+        api('get_item', { item_id: itemId }, { signal }),
+        api('list_labels', { kind: 'category' }, { signal }),
+      ]);
+      const file = await exportObjectArchive(detail.item, detail.notes, freshLabels.labels, mediaApi, signal);
+      signal.throwIfAborted();
+      downloadBlob(file, `inventar-${detail.item.inventory_number.replace(/[^\d]/g, '')}.zip`);
+    });
+  }
+
+  async function importArchive(file: File) {
+    await archive(async signal => {
+      const { restoreObjectArchive } = await import('./object-archive.ts');
+      const item = await restoreObjectArchive(file, api, mediaApi, signal);
+      signal.throwIfAborted();
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: inventoryKeys.item(owner, item.id), exact: true }),
+        cache.invalidateQueries({ queryKey: ['inventory-media', owner, item.id], exact: true }),
+      ]);
+    });
+  }
+
   return <OutboxContext.Provider value={outbox}><div className={`inventory-workspace${selection ? ' has-selection' : ''}`}>
     <div className="workspace-toolbar"><h1>Objekte</h1>
       {selection && <button className="quiet mobile-back" disabled={protectedWork} onClick={() => open(null)}><span className="back-chevron" aria-hidden="true"/>Zurück</button>}
@@ -220,6 +257,10 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
       <button className="new-object" disabled={protectedWork || selection === 'new'} onClick={() => open('new')}><span aria-hidden="true">+</span> Objekt</button>
       <SettingsDialog email={identity.email} open={settingsOpen} onOpen={setSettingsOpen} onSignOut={onSignOut} signOutDisabled={protectedAny || syncRunning}
         entries={outboxEntries} storageError={storageError || readError} onSync={() => outbox.flush()} onDiscard={id => outbox.discardBlocked(id)}
+        onResolveConflict={(id, revision, changes) => outbox.resolveConflict(id, revision, changes)}
+        onLoadConflict={usingLocalCopy ? undefined : async itemId => (await api('get_item', { item_id: itemId })).item}
+        categoryName={id => labels.find(label => label.id === id)?.name ?? 'Kategorie nicht verfügbar'}
+        onImportArchive={usingLocalCopy || protectedAny ? undefined : importArchive}
         synchronization={synchronization} shell={shell} updateDisabled={protectedAny || syncRunning} />
     </div></div>
     {notice && <p role="status" className="saved-toast">{notice}</p>}
@@ -249,7 +290,7 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     </aside>
     {selection && <div className="workspace-detail">
       {selection === 'new' ? <NewItem api={api} labels={labels} onCreated={created} onCancel={() => { setProtectedWork(false); setSelection(null); }} onProtected={protectEditor} />
-        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} media={{ api: mediaApi, owner, email: identity.email, online: !usingLocalCopy }} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
+        : openDetail ? <><ItemEditor key={openDetail.item.id} api={api} initial={openDetail.item} notes={openDetail.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={usingLocalCopy ? undefined : () => void detail.refetch()} onArchive={usingLocalCopy ? undefined : () => exportArchive(openDetail.item.id)} media={{ api: mediaApi, owner, projectUrl, email: identity.email, online: !usingLocalCopy }} />{!usingLocalCopy && detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</>
         : usingLocalCopy ? <p className="state-message" role="status">Dieses Objekt hat noch keine lokale Detailansicht.</p>
         : detail.isPending ? <p className="state-message" role="status">Laden …</p>
         : detail.error ? <div><p role="alert" className="error">{detail.error.message}</p><button className="quiet" onClick={() => void detail.refetch()}>Erneut laden</button></div> : null}

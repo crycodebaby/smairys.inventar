@@ -9,14 +9,14 @@ Stand 26. November 2026.
 | Lokale Kopie | Bestätigte Listen, geöffnete Details und Kategorien werden pro Supabase-Projekt und Konto in IndexedDB gespeichert. Grenzen sind 8 Listenansichten, 40 Details, 4 Bezeichnungstypen, 2 MiB insgesamt und sieben Tage pro Ansicht. Die Offline-Suche arbeitet über die geladenen Objektangaben. Fehlt ein Detail, zeigt die App das ausdrücklich an. |
 | Aktualisieren | Änderungen werden aus bestätigten Serverantworten übernommen. Eine Notiz markiert das Objektdetail als veraltet, eine Kategorie ihren Typ. Objektänderungen markieren die Listen; aktive Listen werden nach einem Warteschlangendurchlauf einmal aktualisiert. Ältere Revisionen können den Cache nicht zurücksetzen. |
 | Schreiben | Klick auf Speichern schreibt den vollständigen Auftrag mit unveränderter UUID zuerst nach IndexedDB. Erst der Transaktionsabschluss erlaubt die Anzeige „Lokal gespeichert“. Die Serverbestätigung räumt den Auftrag aus der sichtbaren Warteschlange. Maximal 50 offene oder abgewiesene Aufträge je Konto. |
-| Wiederanlauf | Die geöffnete App synchronisiert beim Start, bei Rückkehr in den Vordergrund, bei erneuter Verbindung und über „Jetzt prüfen“. Verarbeitung erfolgt nacheinander. Web Locks koordiniert verfügbare Browser-Tabs. Gleiche UUID und Nutzlast sichern den Server auch bei wiederholter Ausführung ab. |
-| Fehler | Nach unklarem Resultat pausiert die Reihenfolge. Wartezeiten wachsen zwischen 2 Sekunden und 2 Minuten. Erneute Ereignisse vor Ablauf senden nichts. Fehlgeschlagene oder konfliktbehaftete Aufträge bleiben im Einstellungsfenster zur Prüfung und zum Export. Formulare zeigen bei offenem Editor die bisherige Konfliktauflösung. |
+| Wiederanlauf | Die geöffnete App synchronisiert beim Start, bei Rückkehr in den Vordergrund, bei erneuter Verbindung und über „Jetzt prüfen“. Nach einem vorübergehenden Fehler löst ein einzelner Timer den nächsten Versuch aus, solange die App im Vordergrund verbunden ist. Web Locks koordiniert Browser-Tabs. Gleiche UUID und Nutzlast sichern Wiederholungen ab. |
+| Fehler | Nach unklarem Resultat pausiert die Reihenfolge. Wartezeiten wachsen zwischen 2 Sekunden und 2 Minuten. Revisionskonflikte bleiben in den Einstellungen aufrufbar. Die bestätigte Auflösung ersetzt den blockierten Auftrag in einer lokalen Transaktion durch einen neuen Auftrag mit neuer UUID und der zuvor angezeigten Serverrevision. |
 | Anfragelast | Kein Polling, keine automatische Wiederholung der Lesefehler, 12 Sekunden Client-Zeitlimit pro RPC. Der SDK-Quellcode bestätigt, dass seine eigene Wiederholung nur idempotente HTTP-Methoden umfasst. Der Inventarclient ruft POST-RPC auf und legt die Retry-Entscheidung explizit bei der Warteschlange fest. |
 | Datenbank | Der Dispatcher prüft Eigentümer und Befehlsargumente. Suche hat maximal 50 Ergebnisse pro Seite. Revisionen und eindeutige Auftrags-IDs sichern Schreibvorgänge ab. Ein Limit von 256 KiB gilt für die Argumente des SQL-Befehls. Die Kategoriezuordnung hat einen Index auf Eigentümer und Kategorie. Client-Zeitlimits allein setzen kein serverseitiges Abfragelimit. |
 
 Ein bereits auf diesem Browser angemeldetes Konto kann seine lokale Kopie auch mit abgelaufenem Zugriffstoken öffnen. Die Kopie ist auf die gespeicherten Ansichten begrenzt. Netzwerkbefehle brauchen eine gültige Sitzung. Solange die Sitzung erneuert wird, kann die App weiterhin Aufträge lokal speichern. Eine Abmeldung sperrt den Zugriff auf die Kopie auf diesem Gerät und stößt ihre Löschung an. Unbestätigte Aufträge bleiben für dasselbe Konto erhalten. Browserdaten können vom Betriebssystem gelöscht werden.
 
-Ungespeicherte Formulare leben im offenen Editor. Erst „Lokal gespeichert“ bestätigt den abgeschickten Auftragsinhalt in IndexedDB. Der Worker überträgt keine privaten API-Antworten und führt keine Schreibaufträge im Hintergrund aus. Foto-Offline-Ablage steht aus.
+Ungespeicherte Formulare leben im offenen Editor. Erst „Lokal gespeichert“ bestätigt den abgeschickten Auftragsinhalt in IndexedDB. Neu ausgewählte Dateien werden vor dem Transfer lokal vorgemerkt. Der Medienreiter des Objekts zeigt sie nach einem Neustart für die Wiederaufnahme an. Das Offline-Lesen bereits hochgeladener Originale steht aus. Der Worker überträgt keine privaten API-Antworten und führt keine Schreibaufträge im Hintergrund aus.
 
 Bei gleichzeitig geöffneten Tabs bleibt ein Update wartend. Es kann nach Schließen weiterer Inventar-Tabs in den Einstellungen installiert werden. Ungespeicherte Eingaben oder laufende Synchronisierung blockieren die manuelle Aktivierung. Eine fehlerhafte neue Version lässt die bisherige App-Hülle verfügbar.
 
@@ -26,11 +26,13 @@ Bei gleichzeitig geöffneten Tabs bleibt ein Update wartend. Es kann nach Schlie
 
 | Ablauf | Vorher | Nachher |
 | --- | ---: | ---: |
-| Zusätzliche Abfragen der Medienliste nach erster Anzeige, über die Testreihe mit ungültiger Datei, Foto, Dateiduplikat und unterbrochenem PDF-Upload | 5 | 0 |
+| Zusätzliche Abfragen der Medienliste nach erster Anzeige im Ablauf ohne Fensterneustart | 5 | 0 |
 | Weitere Vorschauanfragen beim Wechsel vom Objekt zurück zum Medienreiter | 1 | 0 |
 | Online-Start und erstes geöffnetes Objekt | 3 | 3 |
 
 Der Start lädt parallel Objektliste und Kategorien. Ein Objektdetail lädt erst nach Auswahl. Der Medienreiter übernimmt neue Einträge aus der bestätigten Serverantwort, sofern die Liste im Cache liegt. Dabei bleibt ihr ursprünglicher Aktualisierungszeitpunkt erhalten. Kleine Vorschauen werden je Arbeitsplatz im RAM vorgehalten, bis zu 24 Dateien beziehungsweise 2 MiB und 90 Sekunden zum Wiederabruf. Bei Abmeldung oder Wechsel zur lokalen Kopie wird der Cache geleert. Zwei Öffnungen eines Originals verursachen weiterhin zwei authentifizierte Downloads.
+
+Der gesonderte Test mit einem Neustart während des Transfers erzeugt einen Listenabruf beim Neuöffnen. TUS setzt am bestätigten Byte-Offset fort. Ein weiterer Browsertest löst einen verlassenen Revisionskonflikt in den Einstellungen auf und prüft, dass die gleichzeitig geänderte Marke erhalten bleibt.
 
 Die Produktionsstichprobe aus `pg_stat_statements` enthielt 34 Inventar-RPCs mit durchschnittlich 13,6 ms PostgreSQL-Ausführungszeit sowie einen Abruf der Medienliste mit 0,7 ms. Sie umfasst den vorhandenen kleinen Bestand und schließt Transport und Anmeldung aus. Die Daten liefern keinen Anlass für einen neuen Suchindex oder einen zusätzlichen Cache-Dienst.
 

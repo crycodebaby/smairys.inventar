@@ -6,9 +6,9 @@ import { useInventoryWrite } from './use-inventory-write.ts';
 import { ObjectActions } from './ObjectActions.tsx';
 import { noteLinks } from './object-export.ts';
 import type { MediaApi } from './inventory-media.ts';
+import { fieldLabels, RevisionComparison } from './RevisionComparison.tsx';
 
 const ItemMedia = lazy(() => import('./ItemMedia.tsx'));
-const fieldLabels: Record<keyof ItemDraft, string> = { title: 'Bezeichnung', brand: 'Marke', model: 'Typ / Modell', description: 'Beschreibung' };
 
 export function ItemFields({ value, onChange, disabled }: { value: ItemDraft; onChange: (value: ItemDraft) => void; disabled: boolean }) {
   const prefix = useId();
@@ -42,13 +42,16 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
   </section>;
 }
 
-export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload, media }: {
+export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onProtected, refreshAvailable, onReload, onArchive, media }: {
   api: InventoryApi; initial: Item; notes: Note[]; labels: Label[]; onSaved: (item: Item) => void;
   onNote: (note: Note) => void; onProtected: (value: boolean) => void; refreshAvailable: boolean; onReload?: () => void;
-  media?: { api: MediaApi; owner: string; email?: string; online: boolean };
+  onArchive?: () => Promise<void>;
+  media?: { api: MediaApi; owner: string; projectUrl: string; email?: string; online: boolean };
 }) {
   const [base, setBase] = useState(initial);
   const [draft, setDraft] = useState(() => itemDraft(initial));
+  const [category, setCategory] = useState(initial.category_id);
+  const categoryId = useId();
   const [noteProtected, setNoteProtected] = useState(false);
   const [mediaProtected, setMediaProtected] = useState(false);
   const [tab, setTab] = useState<'object' | 'notes' | 'media'>('object');
@@ -59,22 +62,22 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
   const selectTab = (next: typeof tab) => { setTab(next); if (next === 'media') setMediaVisited(true); };
   const tabId = useId();
   const write = useInventoryWrite(api, 'update_item');
-  const dirty = Object.keys(changedFields(itemDraft(base), draft)).length > 0;
+  const changes = { ...changedFields(itemDraft(base), draft), ...(category !== base.category_id ? { category_id: category } : {}) };
+  const dirty = Object.keys(changes).length > 0;
   const protectedWork = (!write.queued && (dirty || write.locked)) || noteProtected || mediaProtected;
   useEffect(() => { onProtected(protectedWork); return () => onProtected(false); }, [protectedWork, onProtected]);
   useEffect(() => {
-    if (!protectedWork && !write.queued && initial.revision > base.revision) { setBase(initial); setDraft(itemDraft(initial)); }
+    if (!protectedWork && !write.queued && initial.revision > base.revision) { setBase(initial); setDraft(itemDraft(initial)); setCategory(initial.category_id); }
   }, [initial, base.revision, protectedWork, write.queued]);
   const conflict = write.error instanceof RevisionConflict ? write.error.current : null;
   async function save(event: FormEvent) {
     event.preventDefault();
-    const result = await write.submit({ item_id: base.id, expected_revision: base.revision, changes: changedFields(itemDraft(base), draft) });
-    if (result) { setBase(result.item); setDraft(itemDraft(result.item)); onSaved(result.item); }
+    const result = await write.submit({ item_id: base.id, expected_revision: base.revision, changes });
+    if (result) { setBase(result.item); setDraft(itemDraft(result.item)); setCategory(result.item.category_id); onSaved(result.item); }
   }
   return <section className="detail-panel" aria-label="Gegenstand bearbeiten">
-    <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload}/></div>
+    <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload} onArchive={onArchive}/></div>
     {(refreshAvailable || initial.revision > base.revision) && protectedWork && <p role="status" className="notice">Neue Fassung verfügbar. Deine Eingaben bleiben erhalten.</p>}
-    {base.category_id && <p className="muted">Kategorie: {labels.find(label => label.id === base.category_id)?.name ?? 'Nicht geladen'}</p>}
     <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{tabs.map((value, index) => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
@@ -83,12 +86,20 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
       selectTab(next); document.getElementById(`${tabId}-${next}`)?.focus();
     }}>{value === 'object' ? 'Objekt' : value === 'media' ? 'Medien' : `Notizen${notes.length ? ` · ${notes.length}` : ''}`}</button>)}</div>
     <div role="tabpanel" id={`${tabId}-object-panel`} aria-labelledby={`${tabId}-object`} hidden={tab !== 'object'}>
-    <form onSubmit={save} className="editor-form"><fieldset disabled={write.locked} className="field-grid"><legend className="sr-only">Angaben zum Gegenstand</legend><ItemFields value={draft} onChange={setDraft} disabled={write.locked} /></fieldset>
+    <form onSubmit={save} className="editor-form"><fieldset disabled={write.locked} className="field-grid"><legend className="sr-only">Angaben zum Gegenstand</legend><ItemFields value={draft} onChange={setDraft} disabled={write.locked} />
+      <div className="field field-wide"><label htmlFor={categoryId}>Kategorie</label>
+        <select id={categoryId} value={category ?? ''} onChange={event => setCategory(event.target.value || null)}>
+          <option value="">Ohne Kategorie</option>
+          {category && !labels.some(label => label.id === category) && <option value={category}>Kategorie nicht geladen</option>}
+          {labels.map(label => <option key={label.id} value={label.id}>{label.name}</option>)}
+        </select>
+      </div>
+    </fieldset>
       {write.error && <p role="alert" className="error">{write.error.message}</p>}
-      {conflict && <div className="conflict"><h3>Aktuellen Stand vergleichen</h3><dl>{draftKeys.filter(key => draft[key] !== conflict[key]).map(key => <div key={key}><dt>{fieldLabels[key]}</dt><dd><span className="muted">Auf dem Server:</span> {conflict[key] || 'Leer'}</dd><dd><span className="muted">Deine Eingabe:</span> {draft[key] || 'Leer'}</dd></div>)}</dl>
-        <div className="actions"><button type="button" className="quiet" onClick={() => { setDraft(rebaseDraft(itemDraft(base), draft, conflict)); setBase(conflict); write.clearError(); }}>Meine Änderungen übernehmen</button><button type="button" className="quiet" onClick={() => { setBase(conflict); setDraft(itemDraft(conflict)); write.clearError(); }}>Serverstand übernehmen</button></div><p className="muted">Die Auswahl wird erst mit „Änderungen speichern“ auf dem Server gespeichert.</p>
+      {conflict && <div className="conflict"><h3>Aktuellen Stand vergleichen</h3><RevisionComparison current={conflict} proposed={changes} categoryName={id => labels.find(label => label.id === id)?.name ?? 'Kategorie nicht verfügbar'} />
+        <div className="actions"><button type="button" className="quiet" onClick={() => { setDraft(rebaseDraft(itemDraft(base), draft, conflict)); if (changes.category_id === undefined) setCategory(conflict.category_id); setBase(conflict); write.clearError(); }}>Meine Änderungen übernehmen</button><button type="button" className="quiet" onClick={() => { setBase(conflict); setDraft(itemDraft(conflict)); setCategory(conflict.category_id); write.clearError(); }}>Serverstand übernehmen</button></div><p className="muted">Die Auswahl wird erst mit „Änderungen speichern“ auf dem Server gespeichert.</p>
       </div>}
-      <div className="actions"><button type="submit" disabled={write.busy || write.queued || !!conflict || (!dirty && !write.uncertain)}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Änderungen speichern'}</button>{!write.locked && dirty && <button className="quiet" type="button" onClick={() => { setDraft(itemDraft(base)); write.clearError(); }}>Eingaben zurücksetzen</button>}</div>
+      <div className="actions"><button type="submit" disabled={write.busy || write.queued || !!conflict || (!dirty && !write.uncertain)}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Änderungen speichern'}</button>{!write.locked && dirty && <button className="quiet" type="button" onClick={() => { setDraft(itemDraft(base)); setCategory(base.category_id); write.clearError(); }}>Eingaben zurücksetzen</button>}</div>
       <p className="muted save-status" data-phase={write.busy ? 'working' : write.queued ? 'queued' : undefined} role="status"><span aria-hidden="true"/>{write.busy ? 'Wird gespeichert …' : write.queued ? 'Lokal gespeichert · ausstehend' : write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
     </form>
     </div>

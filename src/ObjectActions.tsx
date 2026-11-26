@@ -4,15 +4,23 @@ import type { Item, Label, Note } from './inventory-client.ts';
 import { buildObjectExport, downloadExport, noteLinks } from './object-export.ts';
 import type { ExportSelection } from './object-export.ts';
 
-export function ObjectActions({ item, notes, labels, disabled, onReload }: { item: Item; notes: Note[]; labels: Label[]; disabled: boolean; onReload?: () => void }) {
+export function ObjectActions({ item, notes, labels, disabled, onReload, onArchive }: { item: Item; notes: Note[]; labels: Label[]; disabled: boolean; onReload?: () => void; onArchive?: () => Promise<void> }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const trigger = useRef<HTMLElement>(null);
   const [selection, setSelection] = useState<ExportSelection>({ metadata: true, notes: true, links: true, format: 'markdown' });
   const [exportOpen, setExportOpen] = useState(false); const [error, setError] = useState(''); const id = useId();
+  const [archiving, setArchiving] = useState(false);
   function save(event: FormEvent) {
     event.preventDefault(); setError('');
     try { downloadExport(buildObjectExport(item, notes, labels, selection)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Download fehlgeschlagen.'); }
+  }
+  async function archive() {
+    if (!onArchive) return;
+    setArchiving(true); setError('');
+    try { await onArchive(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Das Archiv konnte nicht erstellt werden.'); }
+    finally { setArchiving(false); }
   }
   const hasLinks = noteLinks(notes).length > 0;
   function close() {
@@ -26,7 +34,9 @@ export function ObjectActions({ item, notes, labels, disabled, onReload }: { ite
   }}><summary ref={trigger} aria-label="Objektaktionen">⋯</summary><div className="object-menu-content">
     {!exportOpen ? <>
       <button type="button" className="quiet" disabled={disabled} onClick={() => setExportOpen(true)}>Herunterladen</button>
+      {onArchive && <button type="button" className="quiet" disabled={disabled || archiving} onClick={() => void archive()}>{archiving ? 'Archiv wird erstellt …' : 'Objektarchiv herunterladen'}</button>}
       {onReload && <button type="button" className="quiet" disabled={disabled} onClick={() => { close(); onReload(); }}>Objekt aktualisieren</button>}
+      {error && <p className="error" role="alert">{error}</p>}
     </> : <form onSubmit={save} className="export-form"><h3>Herunterladen</h3>
       <label className="checkbox-label"><input type="checkbox" checked={selection.metadata} onChange={event => setSelection({ ...selection, metadata: event.target.checked })} />Metadaten</label>
       <label className="checkbox-label"><input type="checkbox" checked={selection.notes} onChange={event => setSelection({ ...selection, notes: event.target.checked })} />Notizen</label>

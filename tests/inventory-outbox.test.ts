@@ -81,5 +81,47 @@ test('a revision conflict keeps the submitted payload available and stops retryi
   const entries = await queue.list();
   assert.equal(entries[0].status, 'blocked');
   assert.deepEqual(entries[0].request, order);
+  assert.equal(entries[0].conflict?.revision, 2);
   queue.stop();
+});
+
+test('temporary failures automatically retry the same operation while the foreground is available', { timeout: 5000 }, async () => {
+  const calls: unknown[] = [];
+  const api = createInventoryApi(async (_name, input) => {
+    calls.push(input);
+    if (calls.length === 1) return { data: null, error: { code: 'gateway', message: 'unavailable' }, status: 503 };
+    return { data: { item }, error: null };
+  });
+  const queue = new InventoryOutbox('robin', api, { online: () => true, databaseName: crypto.randomUUID() });
+  const order = prepareWrite('create_item', { title: item.title });
+  try {
+    await queue.submit(order, () => {});
+    assert.deepEqual(calls, [order.input, order.input]);
+  } finally { queue.stop(); }
+});
+
+test('a reopened conflict can replace the blocked payload with one revision-checked order', async () => {
+  const name = crypto.randomUUID();
+  const calls: unknown[] = [];
+  const api = createInventoryApi(async (_name, input) => {
+    calls.push(input);
+    return calls.length === 1 ? { data: { error: 'REVISION_CONFLICT', current: { ...item, revision: 2 } }, error: null }
+      : { data: { item: { ...item, title: 'B-15', revision: 3 } }, error: null };
+  });
+  const queue = new InventoryOutbox('robin', api, { online: () => true, databaseName: name });
+  const order = prepareWrite('update_item', { item_id: item.id, expected_revision: 1, changes: { title: 'B-15' } });
+  await assert.rejects(queue.submit(order, () => {}));
+  await queue.flush();
+  queue.stop();
+  const reopened = new InventoryOutbox('robin', api, { online: () => true, databaseName: name });
+  try {
+    const [blocked] = await reopened.list();
+    assert.equal(blocked.conflict?.revision, 2);
+    await reopened.resolveConflict(blocked.id, 2, order.input.changes);
+    await reopened.flush();
+    assert.equal((await reopened.list()).length, 1);
+    assert.equal((await reopened.list())[0].status, 'confirmed');
+    assert.notEqual((calls[1] as typeof order.input).operation_id, order.input.operation_id);
+    assert.equal((calls[1] as typeof order.input).expected_revision, 2);
+  } finally { reopened.stop(); }
 });

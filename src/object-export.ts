@@ -47,8 +47,12 @@ export function buildObjectExport(item: Item, notes: Note[], labels: Label[], se
 }
 
 export function downloadExport(file: ReturnType<typeof buildObjectExport>) {
-  const url = URL.createObjectURL(new Blob([file.content], { type: file.mime }));
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = file.filename;
+  downloadBlob(new Blob([file.content], { type: file.mime }), file.filename);
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename;
   document.body.append(anchor); anchor.click(); anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

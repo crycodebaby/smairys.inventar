@@ -1,5 +1,7 @@
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { OutboxEntry } from './inventory-outbox.ts';
+import type { CommandInput, Item } from './inventory-client.ts';
+import { RevisionComparison } from './RevisionComparison.tsx';
 import type { SyncPhase } from './offline-state.ts';
 import type { AppShell } from './use-app-shell.ts';
 
@@ -20,6 +22,10 @@ type SettingsProps = {
   storageError: boolean;
   onSync: () => Promise<void>;
   onDiscard: (id: string) => Promise<void>;
+  onLoadConflict?: (itemId: string) => Promise<Item>;
+  onResolveConflict?: (id: string, revision: number, changes: CommandInput<'update_item'>['changes']) => Promise<void>;
+  categoryName?: (id: string) => string;
+  onImportArchive?: (file: File) => Promise<void>;
   synchronization: SyncPhase;
   shell: AppShell;
   updateDisabled: boolean;
@@ -39,6 +45,11 @@ export function SettingsDialog(props: SettingsProps) {
   const heading = useId();
   const pending = props.entries.filter(entry => entry.status === 'pending');
   const blocked = props.entries.filter(entry => entry.status === 'blocked');
+  const [review, setReview] = useState<{ id: string; current: Item; changes: CommandInput<'update_item'>['changes'] } | null>(null);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
 
   function show() {
     dialog.current?.showModal();
@@ -47,7 +58,33 @@ export function SettingsDialog(props: SettingsProps) {
 
   function close() {
     props.onOpen(false);
+    setReview(null);
+    setError('');
     trigger.current?.focus();
+  }
+
+  async function reviewConflict(entry: OutboxEntry) {
+    const request = entry.request.input as CommandInput<'update_item'>;
+    setWorking(true);
+    setError('');
+    try {
+      const current = props.onLoadConflict ? await props.onLoadConflict(request.item_id) : entry.conflict;
+      if (!current) throw new Error('Der Serverstand konnte nicht geladen werden.');
+      if (dialog.current?.open) setReview({ id: entry.id, current, changes: request.changes });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Der Konflikt konnte nicht geöffnet werden.'); }
+    finally { setWorking(false); }
+  }
+
+  async function resolveReview(keepChanges: boolean) {
+    if (!review) return;
+    setWorking(true);
+    setError('');
+    try {
+      if (keepChanges && props.onResolveConflict) await props.onResolveConflict(review.id, review.current.revision, review.changes);
+      else if (!keepChanges) await props.onDiscard(review.id);
+      setReview(null);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Die Änderung konnte nicht gespeichert werden.'); }
+    finally { setWorking(false); }
   }
 
   function recover(entry: OutboxEntry) {
@@ -57,6 +94,15 @@ export function SettingsDialog(props: SettingsProps) {
     link.download = 'inventar-auftrag.json';
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  async function importArchive(file: File) {
+    if (!props.onImportArchive || importing) return;
+    setImporting(true);
+    setImportMessage('');
+    try { await props.onImportArchive(file); setImportMessage('Objektarchiv übernommen.'); }
+    catch (reason) { setImportMessage(reason instanceof Error ? reason.message : 'Import fehlgeschlagen.'); }
+    finally { setImporting(false); }
   }
 
   return <>
@@ -78,15 +124,41 @@ export function SettingsDialog(props: SettingsProps) {
         <button className="quiet" type="button" disabled={props.synchronization === 'working' || props.synchronization === 'offline'} onClick={() => void props.onSync()}>Jetzt prüfen</button>
         {props.storageError && <p className="error" role="alert">Der lokale Speicher ist gerade nicht verfügbar.</p>}
         {pending[0]?.message && <p className="muted sync-message">{pending[0].message} Der Auftrag bleibt lokal gespeichert.</p>}
-        {blocked.length > 0 && <ul className="sync-issues">{blocked.map(entry => <li key={entry.id}>
+        {error && <p className="error" role="alert">{error}</p>}
+        {review ? <div className="sync-issues"><div className="conflict">
+          <h3>{review.current.title}</h3>
+          <RevisionComparison current={review.current} proposed={review.changes} categoryName={props.categoryName}/>
+          <div className="actions">
+            <button type="button" disabled={working} onClick={() => void resolveReview(true)}>Meine Änderungen speichern</button>
+            <button type="button" className="quiet" disabled={working} onClick={() => void resolveReview(false)}>Serverstand behalten</button>
+            <button type="button" className="quiet" disabled={working} onClick={() => setReview(null)}>Zurück</button>
+          </div>
+        </div></div> : blocked.length > 0 && <ul className="sync-issues">{blocked.map(entry => <li key={entry.id}>
           <strong>{commandTitles[entry.request.name]}</strong><p>{entry.message}</p>
-          <div className="actions"><button type="button" className="quiet" onClick={() => recover(entry)}>Eingabe sichern</button><button type="button" className="quiet" onClick={() => void props.onDiscard(entry.id)}>Verwerfen</button></div>
+          <div className="actions">
+            {entry.request.name === 'update_item' && (entry.conflict || entry.message?.includes('inzwischen geändert')) && props.onResolveConflict &&
+              <button type="button" className="quiet" disabled={working || (!entry.conflict && !props.onLoadConflict)} onClick={() => void reviewConflict(entry)}>Konflikt öffnen</button>}
+            <button type="button" className="quiet" onClick={() => recover(entry)}>Eingabe sichern</button><button type="button" className="quiet" onClick={() => void props.onDiscard(entry.id)}>Verwerfen</button>
+          </div>
         </li>)}</ul>}
       </section>
       <section className="settings-section settings-sync" aria-label="App">
         <div><h3>App</h3><p className="muted" role="status">{shellLabels[props.shell.phase]}</p></div>
         {props.shell.phase === 'update' && <button className="quiet" type="button" disabled={props.updateDisabled || props.synchronization === 'offline'} onClick={props.shell.applyUpdate}>Aktualisieren</button>}
         {props.shell.note && <p className="muted sync-message" role="status">{props.shell.note}</p>}
+      </section>
+      <section className="settings-section settings-sync" aria-label="Objektarchiv">
+        <h3>Objektarchiv</h3>
+        <label className="media-picker">
+          <input type="file" className="sr-only" aria-label="Objektarchiv importieren" accept=".zip,application/zip" disabled={!props.onImportArchive || importing}
+            onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              if (file) void importArchive(file);
+            }}/>
+          <span>{importing ? 'Wird importiert …' : 'Importieren'}</span>
+        </label>
+        {importMessage && <p className="sync-message" role="status">{importMessage}</p>}
       </section>
     </dialog>
   </>;

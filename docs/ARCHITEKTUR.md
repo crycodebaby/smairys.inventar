@@ -4,6 +4,8 @@ Stand 26. November 2026. Die Online-Basis, der Offline-Start und ein begrenzter 
 
 ## Implementierte Online-Basis
 
+Einzelne Objektarchive werden mit der fest versionierten Bibliothek `@zip.js/zip.js` im Browser erzeugt und geprüft. Ein Manifest verbindet Originale per SHA-256 und Medien-ID mit Notizen. Der Import verwendet reproduzierbare Auftrags-IDs und vorhandene Upload-Deduplizierung. Wiederaufnahme und Konfliktauflösung verwenden kontogetrennte IndexedDB-Transaktionen. Suche und Kategorieänderung bleiben im gemeinsamen Inventarbefehl.
+
 Dateibezogene Notizen verwenden den bestehenden Inventarbefehl `add_note` mit optionaler Medien-ID. Der Datenbankdispatcher prüft die Bestätigung der Datei im selben Konto und Objekt, und ein zusammengesetzter Fremdschlüssel sichert die Beziehung. Notizen behalten die bestehende Token-, Revisions- und Offline-Auftragsarchitektur.
 
 Für Medien verwenden wir privaten Supabase Storage, PostgreSQL-Reservierungen und den vorhandenen angemeldeten Browserclient. Ein serverseitig bestätigtes Original erhält einen unveränderlichen Pfad. Supabase Free liefert die getrennt hochgeladenen Browser-Vorschauen. `tus-js-client` wird nur für Dateien über 6 MiB geladen. PhotoSwipe kommt für Zoom und Blättern infrage, sobald Bildmaße für mehrere Größen gespeichert werden. OCR bleibt ein getrennter Verarbeitungsschritt. Dialog, Galerie und Upload laden erst beim Öffnen der Funktion. Details und Grenzen stehen in [MEDIEN-UND-WISSEN.md](MEDIEN-UND-WISSEN.md).

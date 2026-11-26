@@ -87,6 +87,37 @@ begin
     raise exception 'Private attachments can be converted into shareable links';
   end if;
   perform set_config('storage.operation','storage.object.get_authenticated',true);
+  second_upload := jsonb_populate_record(null::public.inventory_media,
+    public.inventory_media_begin(target,'nie-gesendet.jpg','image/jpeg',30,repeat('b',64)));
+  perform set_config('inventory.expired_reservation',second_upload.id::text,true);
+  second_upload := jsonb_populate_record(null::public.inventory_media,
+    public.inventory_media_begin(target,'vorhanden.jpg','image/jpeg',30,repeat('c',64)));
+  insert into storage.objects(bucket_id,name,metadata)
+    values ('inventory-media',second_upload.original_path,'{"size":30,"mimetype":"image/jpeg"}');
+  perform set_config('inventory.expired_with_original',second_upload.id::text,true);
+end;
+$$;
+
+reset role;
+update public.inventory_media set reserved_at = now() - interval '49 hours'
+  where id in (current_setting('inventory.expired_reservation')::uuid, current_setting('inventory.expired_with_original')::uuid);
+set local role authenticated;
+do $$
+declare replacement public.inventory_media;
+begin
+  replacement := jsonb_populate_record(null::public.inventory_media,
+    public.inventory_media_begin(current_setting('inventory.media_item')::uuid,'nie-gesendet.jpg','image/jpeg',30,repeat('b',64)));
+  if replacement.id is not distinct from current_setting('inventory.expired_reservation')::uuid then
+    raise exception 'Expired empty reservation was reused';
+  end if;
+  replacement := jsonb_populate_record(null::public.inventory_media,
+    public.inventory_media_begin(current_setting('inventory.media_item')::uuid,'vorhanden.jpg','image/jpeg',30,repeat('c',64)));
+  if replacement.id is distinct from current_setting('inventory.expired_with_original')::uuid then
+    raise exception 'Reservation cleanup removed a pending original';
+  end if;
+  if not exists (select 1 from public.inventory_media where id = current_setting('inventory.media_id')::uuid and uploaded_at is not null) then
+    raise exception 'Reservation cleanup removed confirmed media';
+  end if;
 end;
 $$;
 

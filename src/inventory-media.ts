@@ -51,6 +51,12 @@ async function matchesFileType(file: Blob, mime: Media['mime_type']) {
       .some(brand => allowedBrands.includes(brand));
 }
 
+export async function validateMediaFile(file: File) {
+  const type = mediaFileType(file);
+  if (!await matchesFileType(file, type)) throw new Error('Der Dateiinhalt passt nicht zum Dateityp.');
+  return type;
+}
+
 async function previewFor(file: File, type: Media['mime_type'], signal: AbortSignal) {
   if (type === 'application/pdf') return null;
   const url = URL.createObjectURL(file.slice(0, file.size, type));
@@ -211,8 +217,7 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
     },
     async upload(itemId: string, file: File, signal: AbortSignal, update: (phase: UploadStage, percent?: number) => void) {
       update('preparing');
-      const type = mediaFileType(file);
-      if (!await matchesFileType(file, type)) throw new Error('Der Dateiinhalt passt nicht zum Dateityp.');
+      const type = await validateMediaFile(file);
       const digest = await mediaHash(file);
       signal.throwIfAborted();
       const { data, error } = await withDeadline(s => client.rpc('inventory_media_begin', {

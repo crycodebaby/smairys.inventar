@@ -25,7 +25,7 @@ Originale liegen im privaten Bucket `inventory-media`. RLS erlaubt authentifizie
 
 Die nächste Importstufe verknüpft die 18 geprüften Tubes-Originale mit der Sammlung und dokumentiert die spätere Zuordnung. Exakte Dateiduplikate verwenden den Hash. Mögliche Objektduplikate anhand lesbarer Modell- und Serienangaben werden später zur Prüfung vorgeschlagen. Eine Seriennummer auf einem eingebauten Lautsprecher gehört gegebenenfalls nur zum Lautsprecher.
 
-Bis 6 MiB läuft der Upload als direkter Versuch. Für größere Dateien bis 25 MiB verwendet die App den nachgeladenen `tus-js-client` zur Wiederaufnahme. Nach einem Neustart kann dieselbe Datei erneut ausgewählt werden. Im geöffneten Objekt bleiben pausierte Dateien bis zum Schließen des Editors verfügbar. Die persistente Offline-Dateiwarteschlange und die Wiederaufnahme nach einem Kontowechsel bleiben getrennte Ausbaustufen.
+Bis 6 MiB läuft der Upload als direkter Versuch. Für größere Dateien bis 25 MiB verwendet die App den nachgeladenen `tus-js-client` zur Wiederaufnahme. Originale werden zunächst je Konto und Projekt mit Namen und Dateityp in IndexedDB gespeichert. Nach einem Neustart zeigt der Medienreiter ausstehende Dateien an. Dort kann der Upload erneut gestartet oder der lokale Auftrag entfernt werden. Die Warteschlange fasst bis zu 24 Dateien und insgesamt 150 MiB. Bei der nächsten Upload-Reservierung räumt der Server über 48 Stunden alte Reservierungen desselben Objekts auf, sofern weder Original noch Vorschau gespeichert sind. Vorhandene Dateien bleiben für die Bestätigung verfügbar.
 
 ## Dateibezogene Notizen
 
@@ -64,7 +64,9 @@ Externe Seiten können verschwinden oder Anmeldung verlangen. Deshalb Funddatum 
 
 ## Selektiver Download
 
-Die seltene Aktion liegt im Objektmenü „⋯“. Die Auswahl umfasst künftig Objektangaben, einzelne Originalbilder, bestimmte Ableitungen, Notizen, erkannte Texte, Quellen/Links und optional Verlauf. Original und bearbeitete Fassung werden eindeutig benannt. Ein ZIP mit Manifest erhält Zuordnungen, Versionsbezüge und Hashes; zusätzlich können Text, JSON und geeignete Einzeldateien angeboten werden. Kleine Text-/JSON-Ausgaben sind bereits implementiert. Bild-/ZIP-Export folgt nach der echten Medienablage.
+Das Objektmenü „⋯“ bietet kleine selektive Text-/JSON-Downloads und ein ZIP-Objektarchiv mit bestätigten Originalen, Notizen, Kategorie, Medienzuordnung und SHA-256-Werten. Unter **Einstellungen → Objektarchiv** kann das ZIP als Objekt importiert werden. Der Import prüft alle Originale vor dem ersten Schreibzugriff und ordnet Notizen den neu gespeicherten Dateien zu. Wiederholung desselben Archivs setzt einen teilweise abgeschlossenen Import fort. Die App importiert eine neue Inventarnummer und neue Zeitstempel. Ursprüngliche Nummer und Notizzeitpunkte bleiben im Manifest. Der Browserablauf ist auf 64 MiB pro Objektarchiv begrenzt.
+
+Die Archivabnahme hat zwei echte lokale JPEGs aus „Tubes“ durch Export und Import in einen leeren Testbestand geführt. Beide Prüfsummen und beide Notizbezüge stimmten. Die Originale blieben lokal. Der vollständige Produktions- und Gerätetest auf Safari ist gesondert offen.
 
 Ein öffentliches Verkaufsangebot bekommt nur bewusst gewählte Inhalte. Private Notizen, Lagerort und Verlauf dürfen nicht still mit allen Bildern exportiert werden. Große Archive sollen nicht vollständig im RAM eines iPhones zusammengesetzt werden; der konkrete Transportweg wird anhand des tatsächlichen Dateivolumens gewählt und geprüft.
 

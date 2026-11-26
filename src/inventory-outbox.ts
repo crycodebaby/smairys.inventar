@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
-import { InventoryError } from './inventory-client.ts';
-import type { CommandResult, InventoryApi, WriteName, WriteRequest } from './inventory-client.ts';
+import { InventoryError, prepareWrite, RevisionConflict } from './inventory-client.ts';
+import type { CommandInput, CommandResult, InventoryApi, Item, WriteName, WriteRequest } from './inventory-client.ts';
 import { withDeadline } from './request-deadline.ts';
 
 type Result = CommandResult<WriteName>;
@@ -15,6 +15,7 @@ export type OutboxEntry = {
   status: 'pending' | 'blocked' | 'confirmed';
   message?: string;
   result?: Result;
+  conflict?: Item;
 };
 interface OutboxDatabase extends DBSchema {
   orders: { key: string; value: OutboxEntry; indexes: { owner: string } };
@@ -32,6 +33,7 @@ export class InventoryOutbox {
   private listeners = new Set<(entries: OutboxEntry[]) => void>();
   private activityListeners = new Set<(running: boolean) => void>();
   private rerun = false;
+  private retryTimer?: ReturnType<typeof setTimeout>;
   private failedRefresh?: (reason: unknown) => void;
   private owner: string;
   private api: InventoryApi;
@@ -69,6 +71,25 @@ export class InventoryOutbox {
     } catch (reason) { this.failedRefresh?.(reason); }
   }
 
+  async resolveConflict(id: string, revision: number, changes: CommandInput<'update_item'>['changes']) {
+    const db = await this.getDb();
+    const tx = db.transaction('orders', 'readwrite', { durability: 'strict' });
+    const previous = await tx.store.get(id);
+    if (previous?.owner !== this.owner || previous.status !== 'blocked' || previous.request.name !== 'update_item') {
+      await tx.done;
+      throw new InventoryError('Dieser Konflikt wurde bereits bearbeitet.');
+    }
+    const input = previous.request.input as CommandInput<'update_item'>;
+    const request = prepareWrite('update_item', { item_id: input.item_id, expected_revision: revision, changes });
+    await tx.store.add({ id: this.owner + ':' + request.input.operation_id, owner: this.owner, request,
+      createdAt: Date.now(), attempts: 0, retryAt: 0, status: 'pending' });
+    await tx.store.delete(previous.id);
+    await tx.done;
+    if (this.running) this.rerun = true;
+    void this.publish().catch(reason => this.failedRefresh?.(reason));
+    void this.flush();
+  }
+
   private async publish() {
     if (this.controller.signal.aborted) return;
     const entries = (await this.list()).filter(entry => entry.status !== 'confirmed');
@@ -92,7 +113,7 @@ export class InventoryOutbox {
     const id = this.owner + ':' + request.input.operation_id;
     try {
       const db = await this.getDb();
-      const tx = db.transaction('orders', 'readwrite');
+      const tx = db.transaction('orders', 'readwrite', { durability: 'strict' });
       const entries = await tx.store.index('owner').getAll(this.owner);
       if (entries.filter(entry => entry.status !== 'confirmed').length >= maxOrders) {
         await tx.done;
@@ -133,7 +154,8 @@ export class InventoryOutbox {
         continue;
       }
       // Stop at the first unclear request to keep submission order across reconnects.
-      if (!this.online() || entry.retryAt > Date.now()) break;
+      if (!this.online()) break;
+      if (entry.retryAt > Date.now()) { this.scheduleRetry(entry.retryAt); break; }
       let result: Result;
       try {
         result = await withDeadline(signal => this.api(entry.request.name, entry.request.input, {
@@ -147,10 +169,12 @@ export class InventoryOutbox {
           entry.retryAt = Date.now() + Math.min(120_000, 2_000 * 2 ** Math.min(entry.attempts - 1, 6));
           entry.message = failure.message;
           await db.put('orders', entry);
+          this.scheduleRetry(entry.retryAt);
           break;
         }
         entry.status = 'blocked';
         entry.message = failure.message;
+        if (failure instanceof RevisionConflict) entry.conflict = failure.current;
         await db.put('orders', entry);
         this.notify(entry, failure);
         continue;
@@ -165,9 +189,22 @@ export class InventoryOutbox {
     }
   }
 
+  private scheduleRetry(at: number) {
+    if (this.controller.signal.aborted || !this.online()) return;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      if (!this.online()) return;
+      if (this.running) this.rerun = true;
+      else void this.flush();
+    }, Math.max(0, at - Date.now()));
+  }
+
   flush(): Promise<void> {
     if (this.controller.signal.aborted) return Promise.resolve();
     if (this.running) return this.running;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
     const run = async () => {
       let listChanged = false;
       const process = () => this.process(() => { listChanged = true; });
@@ -193,6 +230,7 @@ export class InventoryOutbox {
 
   stop() {
     this.controller.abort();
+    clearTimeout(this.retryTimer);
     for (const waiter of this.waiters.values()) waiter.reject(new InventoryError('Lokal gespeichert. Synchronisierung pausiert.'));
     this.waiters.clear();
     void this.database?.then(db => db.close()).catch(() => {});

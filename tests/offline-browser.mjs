@@ -60,6 +60,7 @@ let interruptTus = true;
 const tusChunks = [];
 let simulateOffline = false;
 let serviceUnavailable = false;
+let injectRevisionConflict = false;
 function fixtureSession(id, expired = false) {
   const expires = Math.floor(Date.now() / 1000) + (expired ? -120 : 7200);
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -120,7 +121,11 @@ try {
     const body = request.postDataBuffer();
     tusOffset += body.length;
     tusChunks.push(body.length);
-    if (tusOffset === largePdf.length) uploadedPaths.add(mediaRecords.get(expectedPdfHash).original_path);
+    if (tusOffset === largePdf.length) {
+      const path = mediaRecords.get(expectedPdfHash).original_path;
+      uploadedPaths.add(path);
+      uploadedBytes.set(path, largePdf);
+    }
     await route.fulfill({ status: 204, headers: { ...headers, 'upload-offset': String(tusOffset) } });
   });
   await context.route(projectOrigin.origin + '/**', async route => {
@@ -204,9 +209,17 @@ try {
     if (serviceUnavailable) { await route.fulfill({ status: 503, json: { code: 'test_outage', message: 'Unavailable' }, headers }); return; }
     let data;
     if (name === 'search_inventory') data = { items: [item, secondItem] };
-    else if (name === 'list_labels') data = { labels: [] };
+    else if (name === 'list_labels') data = { labels: [{ id: '69abbe43-67a3-4f2c-9feb-7c84c16e329a', name: 'Röhren', color: '#6678AA', kind: 'category' }] };
     else if (name === 'get_item') data = { item: args.item_id === objectId ? item : secondItem, notes: args.item_id === objectId ? notes : [] };
-    else if (name === 'add_note') {
+    else if (name === 'update_item') {
+      if (injectRevisionConflict) {
+        injectRevisionConflict = false;
+        item.revision++;
+        item.brand = 'Ampeg geprüft';
+      }
+      if (args.expected_revision !== item.revision) data = { error: 'REVISION_CONFLICT', current: { ...item } };
+      else { Object.assign(item, args.changes); item.revision++; data = { item: { ...item } }; }
+    } else if (name === 'add_note') {
       if (!writes.has(args.operation_id)) {
         const media = args.media_id && [...mediaRecords.values()].find(record => record.id === args.media_id);
         const note = { ...args, id: crypto.randomUUID(), created_at: new Date().toISOString(),
@@ -260,12 +273,18 @@ try {
   assert.equal(mediaRecords.size, 1);
   assert.equal(uploadedPaths.size, 2);
   await fileInput.setInputFiles({ name: 'Beleg.pdf', mimeType: 'application/pdf', buffer: largePdf });
+  await page.getByRole('button', { name: 'Erneut versuchen', exact: true }).waitFor();
+  assert.equal(mediaRequests.list - readsBeforeUploads, 0);
+  await page.reload();
+  await page.getByRole('button', { name: /Ampeg Offline/ }).click();
+  await page.getByRole('tab', { name: 'Medien' }).click();
+  await page.getByText('1 Datei wartet auf den Upload', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Erneut versuchen', exact: true }).click();
   await page.getByRole('button', { name: /Beleg.pdf/ }).waitFor();
   assert.equal(tusResumed, true);
   assert.deepEqual(tusChunks, [6 * 1024 * 1024, 128]);
   assert.equal(mediaRecords.size, 2);
-  assert.equal(mediaRequests.list - readsBeforeUploads, 0);
+  assert.equal(mediaRequests.list - readsBeforeUploads, 1);
   assert.equal(previewsOnReturn, 0);
   assert.equal(mediaRequests.original, 2);
   assert.deepEqual(calls.slice(0, 3).sort(), ['get_item', 'list_labels', 'search_inventory']);
@@ -274,7 +293,7 @@ try {
     loginAndStartup: calls.slice(0, 3),
   }));
   await page.getByRole('tab', { name: 'Objekt' }).click();
-  console.log('Private Medien, Original und Vorschau, Bestätigung, Deduplizierung und TUS-Übertragung geprüft.');
+  console.log('Private Medien, Bestätigung, Deduplizierung und TUS-Wiederaufnahme nach Neustart geprüft.');
   assert.equal(await page.getByLabel(/Fundort|Lagerort/).count(), 0);
   assert.equal(await page.getByLabel(/Bezeichnung/).evaluate(field => parseFloat(getComputedStyle(field).fontSize) >= 16), true);
   for (const width of [320, 390, 820, 1180]) {
@@ -384,6 +403,31 @@ try {
   await reopened.getByRole('dialog', { name: 'Typenschild.png' }).waitFor();
   await reopened.getByRole('button', { name: 'Datei schließen' }).click();
   console.log('Dateibezug bleibt beim Offline-Neustart erhalten und öffnet anschließend das Original.');
+
+  await reopened.getByRole('tab', { name: 'Objekt' }).click();
+  await reopened.getByLabel('Kategorie', { exact: true }).selectOption({ label: 'Röhren' });
+  injectRevisionConflict = true;
+  await reopened.getByRole('button', { name: 'Änderungen speichern' }).click();
+  await reopened.getByRole('heading', { name: 'Aktuellen Stand vergleichen' }).waitFor();
+  const acceptReopen = dialog => void dialog.accept();
+  reopened.on('dialog', acceptReopen);
+  await reopened.reload();
+  reopened.off('dialog', acceptReopen);
+  await reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await reopened.getByRole('button', { name: 'Konflikt öffnen' }).click();
+  await reopened.getByRole('button', { name: 'Meine Änderungen speichern' }).click();
+  await reopened.getByRole('button', { name: 'Einstellungen schließen' }).click();
+  await reopened.getByRole('button', { name: /Ampeg Offline/ }).click();
+  await reopened.waitForFunction(() => document.querySelector('.editor-form select')?.selectedOptions[0]?.textContent === 'Röhren');
+  assert.equal(item.brand, 'Ampeg geprüft');
+  assert.equal(item.category_id, '69abbe43-67a3-4f2c-9feb-7c84c16e329a');
+  await reopened.getByLabel('Objektaktionen').click();
+  const downloaded = reopened.waitForEvent('download');
+  await reopened.getByRole('button', { name: 'Objektarchiv herunterladen' }).click();
+  const downloadArchive = await downloaded;
+  assert.equal(downloadArchive.suggestedFilename(), 'inventar-1.zip');
+  assert.equal(await downloadArchive.failure(), null);
+  console.log('Konflikt nach Neustart aufgelöst, Kategorie gespeichert und Objektarchiv im Browser heruntergeladen.');
 
   await setOffline(true);
   await reopened.evaluate(({ key, session }) => localStorage.setItem(key, JSON.stringify(session)), { key: authKey, session: fixtureSession(other, true) });

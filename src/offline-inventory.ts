@@ -148,6 +148,12 @@ export function searchLocalInventory(client: QueryClient, owner: string, query: 
   for (const [, detail] of client.getQueriesData<{ item: Item }>({ queryKey: [...inventoryKeys.account(owner), 'item'] })) if (detail) add(detail.item);
   saved.forEach(add);
   const term = query.trim().toLowerCase();
-  return [...results.values()].filter(item => [item.title, item.brand, item.model, item.description].join(' ').toLowerCase().includes(term))
-    .sort((a, b) => Number(b.inventory_number) - Number(a.inventory_number));
+  const number = /^#?\d+$/.test(term) ? term.replace(/^#?0*(?=\d)/, '') : null;
+  const labels = client.getQueryData<ReturnType<typeof parseInventoryResult<'list_labels'>>>(inventoryKeys.labels(owner))?.labels ?? [];
+  const names = new Map(labels.map(label => [label.id, label.name.toLowerCase()]));
+  return [...results.values()].filter(item =>
+    item.inventory_number === number
+    || [item.title, item.brand, item.model, item.description].join(' ').toLowerCase().includes(term)
+    || (item.category_id && names.get(item.category_id)?.includes(term))
+  ).sort((a, b) => b.inventory_number.length - a.inventory_number.length || b.inventory_number.localeCompare(a.inventory_number));
 }

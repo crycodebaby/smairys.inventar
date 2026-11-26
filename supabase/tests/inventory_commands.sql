@@ -17,6 +17,9 @@ declare
   repeated_result jsonb;
   item_id uuid;
   result jsonb;
+  category_id uuid;
+  wrong_label_id uuid;
+  item_number text;
 begin
   result := public.inventory_command('search_inventory','{"query":"","limit":20,"offset":0}');
   if result is distinct from '{"items":[]}'::jsonb then raise exception 'Empty startup search failed'; end if;
@@ -26,12 +29,17 @@ begin
   repeated_result := public.inventory_command('create_item','{"operation_id":"e604f8e0-f01a-4dca-8c06-eb974e99c975","title":"Test ECC83"}');
   if first_result <> repeated_result then raise exception 'Repeated command changed its result'; end if;
   item_id := (first_result->'item'->>'id')::uuid;
+  item_number := first_result->'item'->>'inventory_number';
   perform set_config('inventory.test_item', item_id::text,true);
   if (select count(*) from public.inventory_items) <> 1 then raise exception 'Unexpected item count'; end if;
   result := public.inventory_command('search_inventory','{"query":"ecc83","limit":20,"offset":0}');
   if jsonb_array_length(result->'items') is distinct from 1 or (result->'items'->0->>'id')::uuid is distinct from item_id then raise exception 'Matching search failed'; end if;
   result := public.inventory_command('search_inventory','{"query":"ecc83","limit":1,"offset":1}');
   if result is distinct from '{"items":[]}'::jsonb then raise exception 'Search pagination failed'; end if;
+  result := public.inventory_command('search_inventory',jsonb_build_object('query','#00'||item_number,'limit',1));
+  if result->'items'->0->>'id' is distinct from item_id::text then raise exception 'Inventory number lookup failed'; end if;
+  category_id := (public.inventory_command('create_label',jsonb_build_object('operation_id',gen_random_uuid(),'kind','category','name','Röhren'))->'label'->>'id')::uuid;
+  wrong_label_id := (public.inventory_command('create_label',jsonb_build_object('operation_id',gen_random_uuid(),'kind','marker','name','Geprüft'))->'label'->>'id')::uuid;
   begin
     perform public.inventory_command('search_inventory',jsonb_build_object('query',repeat('x',262145)));
     raise exception 'Oversized command accepted';
@@ -43,10 +51,21 @@ begin
   exception when sqlstate 'P0001' then
     if sqlerrm <> 'IDEMPOTENCY_CONFLICT' then raise; end if;
   end;
-  result := public.inventory_command('update_item',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'expected_revision',1,'changes',jsonb_build_object('title','Test ECC83 updated')));
+  begin
+    perform public.inventory_command('update_item',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'expected_revision',1,'changes',jsonb_build_object('category_id',wrong_label_id)));
+    raise exception 'Non-category label accepted';
+  exception when no_data_found then
+    if sqlerrm <> 'LABEL_NOT_FOUND' then raise; end if;
+  end;
+  result := public.inventory_command('update_item',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'expected_revision',1,'changes',jsonb_build_object('title','Test ECC83 updated','category_id',category_id)));
   if (result->'item'->>'revision')::integer <> 2 then raise exception 'Revision failed'; end if;
+  if result->'item'->>'category_id' is distinct from category_id::text then raise exception 'Category update failed'; end if;
+  result := public.inventory_command('search_inventory',jsonb_build_object('query','Röhren'));
+  if result->'items'->0->>'id' is distinct from item_id::text then raise exception 'Category search failed'; end if;
   result := public.inventory_command('update_item',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'expected_revision',1,'changes',jsonb_build_object('title','Stale')));
   if result->>'error' <> 'REVISION_CONFLICT' then raise exception 'Stale revision accepted'; end if;
+  result := public.inventory_command('update_item',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'expected_revision',2,'changes',jsonb_build_object('category_id',null)));
+  if result->'item'->'category_id' is distinct from 'null'::jsonb then raise exception 'Clearing the category failed'; end if;
   perform public.inventory_command('add_note',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',item_id,'title','Aufschrift','verbatim_text','alt [3?]','interpretation','Unklar','pinned',true));
   result := public.inventory_command('get_item',jsonb_build_object('item_id',item_id));
   if jsonb_array_length(result->'notes') <> 1 then raise exception 'Note missing'; end if;

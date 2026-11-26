@@ -483,3 +483,6 @@ dd { margin: 4px 0 0; font-size: 1rem; overflow-wrap: anywhere; }
 .notes-list .note-source { display: block; margin: 0 0 12px; text-align: start; max-width: 100%; overflow-wrap: anywhere; }
 .note-source-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 12px; border: 1px solid var(--line); border-radius: 14px; }
 .note-source-field span { color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.pending-media { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.pending-media li { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.pending-media span { min-width: 0; overflow-wrap: anywhere; }

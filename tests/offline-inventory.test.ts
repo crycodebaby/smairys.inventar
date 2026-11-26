@@ -8,6 +8,18 @@ import { accessTransition, rememberedIdentity, syncPhase } from '../src/offline-
 const project = 'https://test.supabase.co';
 const item = { id: crypto.randomUUID(), inventory_number: '7', title: 'Ampeg B-15', brand: 'Ampeg', model: 'B-15', description: '', category_id: null, revision: 1 };
 
+test('local search finds a saved number and its category without a server lookup', () => {
+  const cache = createInventoryQueryClient();
+  const owner = crypto.randomUUID();
+  const label = { id: crypto.randomUUID(), kind: 'category', name: 'Röhren', color: '#6678AA' };
+  const saved = { ...item, category_id: label.id };
+  cache.setQueryData(inventoryKeys.labels(owner), { labels: [label] });
+  assert.deepEqual(searchLocalInventory(cache, owner, '#007', [saved]), [saved]);
+  assert.deepEqual(searchLocalInventory(cache, owner, 'RÖHREN', [saved]), [saved]);
+  assert.deepEqual(searchLocalInventory(cache, owner, '#77', [saved]), []);
+  cache.clear();
+});
+
 test('only the current account and project can restore saved views, with original freshness', async () => {
   const owner = crypto.randomUUID();
   const at = Date.now() - 60000;
