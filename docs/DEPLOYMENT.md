@@ -27,3 +27,5 @@ Die Auth Site URL lautet https://inventar.smairys.de. Die erlaubte Anmelderückk
 ## Nachweise
 
 Aktueller Deployment-, Domain- und Anmeldestatus stehen in STATUS.md. Foto-Uploads und Offlinebetrieb sind eigene Arbeitspakete und nicht Bestandteil des ersten Web-Hostings.
+
+Erstes konfiguriertes Produktionsdeployment: dpl_HXwVVAShSA9d4cvw78urWKi4hUkA, Commit 8e4c2d33914864dd559f2f14215b3709584daf3e, READY. Am 26. November 2026 lieferten https://inventar.smairys.de und beide referenzierten JavaScript-/CSS-Assets HTTP 200. Die HTTP-Header aus vercel.json wurden bestätigt. Browser-Build und Projektkonfiguration stimmen mit dem bestehenden Supabase-Projekt überein. Ein vollständiger Login wurde dabei nicht ausgelöst.

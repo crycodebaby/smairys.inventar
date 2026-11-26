@@ -3,7 +3,8 @@
 ## Live eingerichtet und überprüft
 
 - Vercel-Projekt smairys-inventar, ID prj_3FdWUXoXeRBzUcO8CDKO51U7mDYg, ist im Hobby-Team robin-schmeiries-projects mit GitHub main verbunden. Node.js 24.x, Vite, npm ci, npm run build und dist sind eingerichtet; die drei öffentlichen VITE-Konfigurationswerte sind hinterlegt.
-- inventar.smairys.de ist dem Vercel-Projekt zugeordnet und als verified bestätigt. Vercel meldet für die vorhandene DNS-Konfiguration misconfigured=false und keine Konflikte. Der abschließende HTTPS- und Oberflächentest nach dem konfigurierten Build steht noch aus. Andere Domains und DNS-Einträge wurden nicht geändert.
+- inventar.smairys.de ist dem Vercel-Projekt zugeordnet und als verified bestätigt. Vercel meldet für die vorhandene DNS-Konfiguration misconfigured=false und keine Konflikte. Andere Domains und DNS-Einträge wurden nicht geändert.
+- Das Git-Produktionsdeployment dpl_HXwVVAShSA9d4cvw78urWKi4hUkA für Commit 8e4c2d33914864dd559f2f14215b3709584daf3e wurde mit READY und inventar.smairys.de als Alias bestätigt. Der HTTPS-Abruf der Domain liefert HTTP 200, den Titel smairys.inventar und die konfigurierten Sicherheits- und noindex-Header. JavaScript und CSS liefern ebenfalls HTTP 200; der Browser-Build enthält den richtigen Supabase-Projektbezug und den öffentlichen Publishable Key. Lokaler Build und alle sieben Tests haben erneut bestanden. Eine gerenderte Browserprüfung war wegen der unterbrochenen lokalen Browseranbindung nicht möglich; Anmeldung und Gerätebedienung bleiben offen.
 
 - Supabase-Projekt xywnhifzahwcmclrfsil ist aktiv. Die Migrationen 20261125234917 und 20261125235513 sind angewendet.
 - Die Edge Function inventory stellt HTTP-Befehle und einen OAuth-geschützten MCP-Adapter bereit. Sie prüft Benutzeranmeldung, für MCP zusätzlich Client-ID und Ressourcen-Audience.
@@ -31,16 +32,16 @@
 
 ## Offen
 
-- Abschließende Hosting-Abnahme nach dem konfigurierten Build, kompletter OAuth-Durchlauf, persönliche Installation in ChatGPT, Foto-Uploads, Datenabgleich und Offlinebetrieb sind offen.
+- Gerenderte Browser- und Geräteprüfung, echte Benutzeranmeldung, kompletter OAuth-Durchlauf, persönliche Installation in ChatGPT, Foto-Uploads, Datenabgleich und Offlinebetrieb sind offen.
 - Supabase Free ist festgelegt. Die Auswahl eines zusätzlichen Offline-Abgleichs sowie Fotovolumen und Gerätetests stehen aus.
 - Der Supabase-OAuth-Server meldete bei der letzten öffentlichen Prüfung feature_disabled. Die vorhandene Token-Hook-Funktion muss in den Auth-Einstellungen ausgewählt werden.
-- Der Nutzer hat das bestehende Projekt bestätigt. Das Browserkonto wird bei dessen direktem Aufruf zur Organisationsübersicht geleitet. Für Dashboard-Einstellungen ist der Projektzugriff dieses Kontos zu ergänzen. Der verbundene Supabase-Zugang dieser Sitzung hat Zugriff auf das bestehende Projekt.
+- Der Nutzer hat das bestehende Projekt bestätigt. Auch der neu verbundene Supabase-Zugang hat Zugriff auf das Projekt. Die letzte Chrome-Prüfung wurde durch Escape abgebrochen; ein weiterhin fehlender Dashboardzugriff ist deshalb nicht bestätigt.
 - Die vorhandene SQLite-Datei ist der lokale Anfangsbestand. Nach Migration in einen Cloud-Dienst wird ihre Rolle als Export oder Arbeitskopie ausdrücklich festgelegt.
 - Der lokale Desktop-Zielordner liegt außerhalb der Schreibberechtigung dieser Sitzung. Die aktuellen Arbeitsdateien befinden sich im Projektordner innerhalb des freigegebenen Codex-Arbeitsbereichs.
 - Transkriptionen, eindeutige Stückzuordnungen und Marktwerte sind noch zu erarbeiten.
 
 ## Nächste Arbeitseinheit
 
-Das konfigurierte GitHub-Deployment unter inventar.smairys.de abschließend prüfen. Danach OAuth-Server, Zustimmungsseite und Token Hook verbinden und die persönliche ChatGPT-Verbindung testen. Hosting-Werte stehen in docs/DEPLOYMENT.md, OAuth-Werte und Nachweise in docs/CHATGPT.md. Der spätere Offline-/Fotodurchstich bleibt in docs/ABNAHME.md beschrieben.
+Die veröffentlichte Web-App im Browser anmelden. Danach OAuth-Server, Zustimmungsseite und Token Hook verbinden und die persönliche ChatGPT-Verbindung testen. Hosting-Werte stehen in docs/DEPLOYMENT.md, OAuth-Werte und Nachweise in docs/CHATGPT.md. Der spätere Offline-/Fotodurchstich bleibt in docs/ABNAHME.md beschrieben.
 
 Status eines Tests wird als offen, bestanden oder fehlgeschlagen geführt. Eine Dokumentationsprüfung gilt als Quellenbeleg. Ein Gerätetest braucht ein protokolliertes Ergebnis auf dem benannten Gerät.

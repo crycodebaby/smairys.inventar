@@ -51,9 +51,9 @@ Die HTTP- und MCP-Adapter prüfen Eingaben mit denselben Zod-Schemas. Die Postgr
 
 ## OAuth-Freischaltung
 
-Die öffentliche Supabase-OAuth-Discovery meldet bei der letzten Prüfung feature_disabled. Zusätzlich zeigte das Browserkonto beim direkten Projektaufruf eine Rückleitung zur Organisationsübersicht. Der Nutzer hat festgelegt, dass das bestehende Projekt beibehalten wird. Für die restlichen Dashboard-Einstellungen braucht dieses Browserkonto Zugriff auf das bestehende Projekt.
+Die öffentliche Supabase-OAuth-Discovery meldet bei der letzten Prüfung feature_disabled. Der Nutzer hat festgelegt, dass das bestehende Projekt beibehalten wird. Auch der neu verbundene Supabase-Zugang erreicht es. Der Dashboardzugriff des zuletzt verwendeten Chrome-Kontos wurde nach dessen Neuanmeldung noch nicht abschließend geprüft.
 
-Nach Bereitstellung der Web-App werden im zugriffsberechtigten Supabase-Dashboard folgende Werte eingerichtet.
+Die Web-App ist unter https://inventar.smairys.de bereitgestellt; HTTPS und ausgelieferte Assets wurden geprüft. Im zugriffsberechtigten Supabase-Dashboard werden folgende Werte eingerichtet.
 
 1. Auth Site URL auf https://inventar.smairys.de setzen und die Anmelderückkehr zu dieser Anwendung zulassen.
 2. OAuth-Server einschalten und die eigene Zustimmungsseite auf den Rootpfad / der Web-App legen. Sie verarbeitet authorization_id.
@@ -71,7 +71,7 @@ Build und Typprüfung haben bestanden. Sieben automatisierte Tests prüfen Befeh
 
 Die PostgreSQL-Testdatei supabase/tests/inventory_commands.sql wurde im Projekt ausgeführt. Sie prüft Idempotenz, abweichende Wiederholungen, Revisionen, Notizen, RLS und Zugriffe zwischen zwei Testkonten. Alle Testdaten werden im selben Durchlauf per Rollback zurückgenommen. Der Security Advisor lieferte bei der ersten Bereitstellung keine Hinweise.
 
-Status und Ressourcenmetadaten wurden live mit HTTP 200 geprüft. Der anonyme MCP-Aufruf lieferte HTTP 401 und eine OAuth-Anmeldeanforderung. Ein kompletter OAuth-Durchlauf mit einem echten Konto ist offen. Auch Hosting der Web-App, Geräteprüfung, Foto-Uploads und Offlinebetrieb sind noch umzusetzen beziehungsweise nachzuweisen.
+Status und Ressourcenmetadaten wurden live mit HTTP 200 geprüft. Der anonyme MCP-Aufruf lieferte HTTP 401 und eine OAuth-Anmeldeanforderung. Ein kompletter OAuth-Durchlauf mit einem echten Konto ist offen. Das Web-Hosting ist eingerichtet und per HTTPS geprüft. Gerenderte Browser- und Geräteprüfung, Foto-Uploads und Offlinebetrieb sind noch umzusetzen beziehungsweise nachzuweisen.
 
 ## Entwicklung
 
