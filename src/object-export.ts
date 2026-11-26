@@ -7,7 +7,9 @@ export function noteLinks(notes: Note[]) {
     for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/g)) {
       try {
         const url = new URL(match[0].replace(/[.,;!?)\]}]+$/, ''));
-        if (!links.has(url.href)) links.set(url.href, { url: url.href, note_id: note.id, title: note.title });
+        if ((url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password && !links.has(url.href)) {
+          links.set(url.href, { url: url.href, note_id: note.id, title: note.title });
+        }
       } catch { /* An incomplete pasted URL remains in the original note. */ }
     }
   }

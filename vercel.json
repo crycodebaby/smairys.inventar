@@ -9,6 +9,8 @@
     {
       "source": "/(.*)",
       "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob:; connect-src 'self' https://xywnhifzahwcmclrfsil.supabase.co https://xywnhifzahwcmclrfsil.storage.supabase.co; font-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" },
+        { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(), payment=(), usb=()" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "no-referrer" },
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" },

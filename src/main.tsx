@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import type { OAuthAuthorizationDetails } from '@supabase/supabase-js';
-import { authErrorMessage, authReturnError, loginRedirectUrl } from './auth-flow.ts';
+import { authErrorMessage, authReturnError, loginRedirectUrl, oauthRedirectUrl } from './auth-flow.ts';
 import { accessTransition, rememberedIdentity } from './offline-state.ts';
 import { useAppShell } from './use-app-shell.ts';
 import './style.css';
@@ -123,7 +123,7 @@ function App() {
           const { data, error: consentError } = await supabase!.auth.oauth.getAuthorizationDetails(authorizationId);
           if (consentError) throw consentError;
           if (!active || !data) return;
-          if ('redirect_url' in data) { location.assign(data.redirect_url); return; }
+          if ('redirect_url' in data) { location.assign(oauthRedirectUrl(data.redirect_url)); return; }
           setAuthorization(data);
         }
       } catch (reason) {
@@ -144,7 +144,7 @@ function App() {
         const { error: authError } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
         if (authError) throw new Error(authErrorMessage(authError.code));
       } else {
-        const { error: authError } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: loginRedirectUrl(location.href, import.meta.env.DEV ? location.origin : import.meta.env.VITE_APP_URL || 'https://inventar.smairys.de') } });
+        const { error: authError } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: loginRedirectUrl(location.href, import.meta.env.DEV ? location.origin : import.meta.env.VITE_APP_URL || 'https://inventar.smairys.de') } });
         if (authError) throw new Error(authErrorMessage(authError.code));
         setCodeSent(true);
         setNotice('Öffne den Link aus der neuesten E-Mail. Falls sie einen Anmeldecode enthält, kannst du ihn hier eingeben.');
@@ -160,7 +160,7 @@ function App() {
       const method = approve ? supabase.auth.oauth.approveAuthorization.bind(supabase.auth.oauth) : supabase.auth.oauth.denyAuthorization.bind(supabase.auth.oauth);
       const { data, error: consentError } = await method(authorizationId, { skipBrowserRedirect: true });
       if (consentError) throw consentError;
-      if (data) location.assign(data.redirect_url);
+      if (data) location.assign(oauthRedirectUrl(data.redirect_url));
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Verbindung fehlgeschlagen.'); }
     finally { setBusy(false); }
   }

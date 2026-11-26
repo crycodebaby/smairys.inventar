@@ -8,6 +8,7 @@
 
 - Supabase-Projekt xywnhifzahwcmclrfsil ist aktiv. Die Migrationen 20261125234917 und 20261125235513 sind angewendet.
 - Supabase-Migration 20261126025826 ist angewendet. Der Medienbucket ist privat, die Metadatentabelle nutzt RLS. Ein SQL-Test mit Rollback prüft Reservierung, fehlende Uploads, Wiederholung, Eigentümergrenzen und den Ausschluss delegierter Textclients. Der Chromium-Test simuliert eine unterbrochene TUS-Übertragung samt Wiederaufnahme.
+- Supabase-Migration 20261126080622 ist angewendet. Der produktionseigene Benutzer mit Einmalsitzung hat den lesenden SQL-Test bestanden. Das separate Abschalten der Supabase-Neuregistrierung ist weiterhin offen.
 - Die Edge Function inventory stellt HTTP-Befehle und einen OAuth-geschützten MCP-Adapter bereit. Sie prüft Benutzeranmeldung, für MCP zusätzlich Client-ID und Ressourcen-Audience.
 - Sieben Befehle unterstützen Suche, Detailabruf, Bezeichnungen auflisten, Gegenstand erfassen, revisionsgeschützt ändern, Notiz anheften und eigene Bezeichnung erstellen.
 - Schreibaufträge werden atomar protokolliert und bei gleicher operation_id wiedererkannt. Normale Benutzer haben eigentümerbezogene Leserechte, Änderungen laufen durch die begrenzte Befehlsschnittstelle.
@@ -16,6 +17,7 @@
 
 ## Lokal implementiert und überprüft
 
+- Die Sicherheitsprüfung zur öffentlichen Oberfläche, Authentifizierung, Datenbank und Anhängen steht in [docs/SICHERHEIT.md](docs/SICHERHEIT.md). Der Inventarzugriff ist auf ein serverseitig bestimmtes Konto und die bestätigte Einmalanmeldung beschränkt. Anhänge werden über authentifizierte Downloads geladen, mit Dateiprüfung im Browser.
 - Der Medienreiter lädt Fotos und PDF-Belege am Objekt in einen privaten Storage-Bucket. Wiederholte Inhalte am gleichen Objekt verwenden einen stabilen Datensatz. Bestätigte Uploads zeigen Serverzeit und Konto, das Original bleibt in seiner empfangenen Fassung. Große Dateien laufen über TUS. Zuordnung der Tubes-Originale, Bildnotizen, OCR, Geräteprüfung und visuelle MCP-Übergabe sind die nächsten Ausbaustufen.
 - Die Web-Oberfläche lässt Fund- und Lagerort aus Objektformularen, der Offline-Lesekopie und Text-/JSON-Objektexporten weg. Das bestehende Serverfeld bleibt für Altdaten und bereits gespeicherte Aufträge kompatibel. Der dunklere UI-Stand konzentriert chromatische Kanten auf Bedienelemente und berücksichtigt Touch, Safe Areas, native Scrollleisten und Systemeinstellungen für Bewegung und Transparenz. Gestaltungsregeln und Quellen stehen in docs/UI-DESIGN.md.
 - Die Textwarteschlange speichert abgeschickte Formulare in IndexedDB pro Konto und synchronisiert sie im Vordergrund. Auftrags-ID, Backoff und abgewiesene Eingaben bleiben beim Neustart erhalten. Das Zahnrad öffnet Konto, Synchronisierung und App-Updates.

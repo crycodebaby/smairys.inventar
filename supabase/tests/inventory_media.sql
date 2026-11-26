@@ -1,10 +1,12 @@
 begin;
 
-insert into auth.users(id,aud,role,email) values
-  ('af6dd23e-ab0c-494e-a7f1-d7511549c73e','authenticated','authenticated','inventory-media-a@example.invalid'),
-  ('c4cbaba3-3ea8-4dad-8dad-82cfabef1966','authenticated','authenticated','inventory-media-b@example.invalid');
+insert into auth.users(id,aud,role,email,email_confirmed_at) values
+  ('af6dd23e-ab0c-494e-a7f1-d7511549c73e','authenticated','authenticated','inventory-media-a@example.invalid',now()),
+  ('c4cbaba3-3ea8-4dad-8dad-82cfabef1966','authenticated','authenticated','inventory-media-b@example.invalid',now());
+insert into private.inventory_owner(user_id) values ('af6dd23e-ab0c-494e-a7f1-d7511549c73e')
+  on conflict (singleton) do update set user_id = excluded.user_id;
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated"}',true);
+select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}]}',true);
 
 do $$
 declare
@@ -36,6 +38,10 @@ begin
   insert into storage.objects(bucket_id,name,metadata)
     values ('inventory-media',first_upload.original_path,'{"size":30,"mimetype":"image/jpeg"}'),
            ('inventory-media',first_upload.preview_path,'{"size":10,"mimetype":"image/jpeg"}');
+  perform set_config('storage.operation','storage.object.get_authenticated',true);
+  if exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
+    raise exception 'An unconfirmed upload is downloadable';
+  end if;
   first_upload := jsonb_populate_record(null::public.inventory_media,public.inventory_media_confirm(first_upload.id));
   second_upload := jsonb_populate_record(null::public.inventory_media,public.inventory_media_confirm(first_upload.id));
   if first_upload.uploaded_at is null or not first_upload.has_preview or second_upload.uploaded_at is distinct from first_upload.uploaded_at then
@@ -44,10 +50,19 @@ begin
   if (select count(*) from storage.objects where bucket_id = 'inventory-media') <> 2 then
     raise exception 'Owner cannot see the stored original and preview';
   end if;
+  perform set_config('storage.operation','storage.object.list',true);
+  if exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
+    raise exception 'The private bucket allows object enumeration';
+  end if;
+  perform set_config('storage.operation','storage.object.sign',true);
+  if exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
+    raise exception 'Private attachments can be converted into shareable links';
+  end if;
+  perform set_config('storage.operation','storage.object.get_authenticated',true);
 end;
 $$;
 
-select set_config('request.jwt.claims','{"sub":"c4cbaba3-3ea8-4dad-8dad-82cfabef1966","role":"authenticated"}',true);
+select set_config('request.jwt.claims','{"sub":"c4cbaba3-3ea8-4dad-8dad-82cfabef1966","role":"authenticated","amr":[{"method":"otp"}]}',true);
 do $$
 begin
   if exists (select 1 from public.inventory_media) or exists (select 1 from storage.objects where bucket_id = 'inventory-media') then
@@ -56,17 +71,19 @@ begin
   begin
     perform public.inventory_media_begin(current_setting('inventory.media_item')::uuid,'x.jpg','image/jpeg',30,repeat('a',64));
     raise exception 'Another account can reserve media for the object';
-  exception when no_data_found then null;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;
   begin
     perform public.inventory_media_confirm(current_setting('inventory.media_id')::uuid);
     raise exception 'Another account can confirm the media';
-  exception when no_data_found then null;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;
 end;
 $$;
 
-select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","client_id":"test-mcp"}',true);
+select set_config('request.jwt.claims','{"sub":"af6dd23e-ab0c-494e-a7f1-d7511549c73e","role":"authenticated","amr":[{"method":"otp"}],"client_id":"test-mcp"}',true);
 do $$
 begin
   if exists (select 1 from public.inventory_media) or exists (select 1 from storage.objects where bucket_id = 'inventory-media') then

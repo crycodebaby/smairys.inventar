@@ -1,11 +1,13 @@
 begin;
 
-insert into auth.users(id,aud,role,email) values
-  ('913e43ee-3fb7-4bfa-b5ec-bd12136df064','authenticated','authenticated','inventory-test-a@example.invalid'),
-  ('d4f72251-bc6b-4ab1-8ae3-45abe3f14169','authenticated','authenticated','inventory-test-b@example.invalid');
+insert into auth.users(id,aud,role,email,email_confirmed_at) values
+  ('913e43ee-3fb7-4bfa-b5ec-bd12136df064','authenticated','authenticated','inventory-test-a@example.invalid',now()),
+  ('d4f72251-bc6b-4ab1-8ae3-45abe3f14169','authenticated','authenticated','inventory-test-b@example.invalid',now());
+insert into private.inventory_owner(user_id) values ('913e43ee-3fb7-4bfa-b5ec-bd12136df064')
+  on conflict (singleton) do update set user_id = excluded.user_id;
 
 set local role authenticated;
-select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated"}',true);
+select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"otp"}]}',true);
 
 do $$
 declare
@@ -54,25 +56,62 @@ begin
 end;
 $$;
 
-select set_config('request.jwt.claims','{"sub":"d4f72251-bc6b-4ab1-8ae3-45abe3f14169","role":"authenticated"}',true);
+select set_config('request.jwt.claims','{"sub":"d4f72251-bc6b-4ab1-8ae3-45abe3f14169","role":"authenticated","amr":[{"method":"otp"}]}',true);
 do $$
 begin
   if (select count(*) from public.inventory_items) <> 0 then raise exception 'Cross-account SELECT leak'; end if;
-  if public.inventory_command('search_inventory','{"query":"ecc83"}') is distinct from '{"items":[]}'::jsonb then raise exception 'Cross-account search leak'; end if;
+  begin
+    perform public.inventory_command('search_inventory','{"query":"ecc83"}');
+    raise exception 'Cross-account search accepted';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
+  begin
+    perform public.inventory_command('create_item',jsonb_build_object('operation_id',gen_random_uuid(),'title','Foreign account'));
+    raise exception 'Cross-account write accepted';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
   begin
     perform public.inventory_command('get_item',jsonb_build_object('item_id',current_setting('inventory.test_item')));
     raise exception 'Cross-account command leak';
-  exception when sqlstate 'P0002' then
-    if sqlerrm <> 'ITEM_NOT_FOUND' then raise; end if;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
   end;
   begin
     perform public.inventory_command('add_note',jsonb_build_object('operation_id',gen_random_uuid(),'item_id',current_setting('inventory.test_item'),'title','Wrong owner'));
     raise exception 'Cross-account note accepted';
-  exception when sqlstate 'P0002' then
-    if sqlerrm <> 'ITEM_NOT_FOUND' then raise; end if;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
+  begin
+    perform private.inventory_dispatch_for_owner('search_inventory','{}');
+    raise exception 'Internal unguarded function is callable';
+  exception when insufficient_privilege then null;
   end;
 end;
 $$;
 
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated","amr":[{"method":"password"}]}',true);
+do $$
+begin
+  if exists (select 1 from public.inventory_items) then raise exception 'Password-authenticated access to inventory'; end if;
+  begin
+    perform public.inventory_command('search_inventory','{}');
+    raise exception 'Password-authenticated command accepted';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
+  perform set_config('request.jwt.claims','{"sub":"913e43ee-3fb7-4bfa-b5ec-bd12136df064","role":"authenticated"}',true);
+  begin
+    perform public.inventory_command('search_inventory','{}');
+    raise exception 'Command accepted without proof of OTP';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'INVENTORY_ACCESS_DENIED' then raise; end if;
+  end;
+end;
+$$;
 reset role;
 rollback;

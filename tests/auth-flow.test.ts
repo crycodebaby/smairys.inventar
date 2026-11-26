@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { authReturnError, loginRedirectUrl } from '../src/auth-flow.ts';
+import { authReturnError, loginRedirectUrl, oauthRedirectUrl } from '../src/auth-flow.ts';
 
 test('login returns to the configured live origin and preserves only the OAuth request', () => {
   const url = loginRedirectUrl('https://preview.vercel.app/?authorization_id=request-123&redirect_to=https://other.example/#access_token=private', 'https://inventar.smairys.de');
@@ -15,4 +15,11 @@ test('expired links get a useful message without echoing untrusted fragment text
   assert.equal(authReturnError('https://inventar.smairys.de/#access_token=private&refresh_token=private'), null);
   assert.equal(authReturnError('https://inventar.smairys.de/'), null);
   assert.doesNotMatch(authReturnError('https://inventar.smairys.de/#error=oops&error_description=private-value')!, /private-value/);
+});
+
+test('OAuth return targets are restricted to HTTPS without embedded credentials', () => {
+  assert.equal(oauthRedirectUrl('https://chatgpt.com/callback'), 'https://chatgpt.com/callback');
+  for (const url of ['data:text/plain,example', 'http://example.test', 'https://example.test@other.test']) {
+    assert.throws(() => oauthRedirectUrl(url), /Ungültige OAuth-Rückkehradresse/);
+  }
 });

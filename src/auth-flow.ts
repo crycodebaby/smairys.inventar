@@ -22,3 +22,9 @@ export function loginRedirectUrl(currentUrl: string, appUrl: string): string {
   if (authorization && authorization.length <= 200) target.searchParams.set('authorization_id', authorization);
   return target.href;
 }
+
+export function oauthRedirectUrl(value: string) {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Ungültige OAuth-Rückkehradresse.');
+  return url.href;
+}

@@ -33,6 +33,21 @@ export async function mediaHash(file: Blob) {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function matchesFileType(file: Blob, mime: Media['mime_type']) {
+  const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+  const tag = (start: number, end: number) => String.fromCharCode(...head.slice(start, end));
+  if (mime === 'image/jpeg') return head[0] === 255 && head[1] === 216 && head[2] === 255;
+  if (mime === 'image/png') return head.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((value, i) => head[i] === value);
+  if (mime === 'image/webp') return tag(0, 4) === 'RIFF' && tag(8, 12) === 'WEBP';
+  if (mime === 'application/pdf') return tag(0, 5) === '%PDF-';
+  const boxSize = head.length >= 8 ? new DataView(head.buffer).getUint32(0) : 0;
+  if (tag(4, 8) !== 'ftyp' || boxSize < 16) return false;
+  const allowedBrands = ['heic','heix','hevc','hevx','heim','heis','hevm','hevs','mif1','msf1'];
+  return allowedBrands.includes(tag(8, 12)) ||
+    Array.from({ length: Math.floor((Math.min(head.length, boxSize) - 16) / 4) }, (_, index) => tag(16 + index * 4, 20 + index * 4))
+      .some(brand => allowedBrands.includes(brand));
+}
+
 async function previewFor(file: File, type: Media['mime_type'], signal: AbortSignal) {
   if (type === 'application/pdf') return null;
   const url = URL.createObjectURL(file.slice(0, file.size, type));
@@ -65,7 +80,6 @@ async function previewFor(file: File, type: Media['mime_type'], signal: AbortSig
 export type UploadStage = 'preparing' | 'sending' | 'confirming';
 
 export function createMediaApi(client: SupabaseClient, projectUrl: string, publicKey: string, accessToken: () => Promise<string>) {
-  const bucket = client.storage.from(bucketName);
   async function confirm(id: string, signal: AbortSignal) {
     const { data, error } = await withDeadline(s => client.rpc('inventory_media_confirm', { media_id: id }).retry(false).abortSignal(s), signal);
     if (error?.message === 'MEDIA_FILE_UNCONFIRMED') return null;
@@ -123,26 +137,43 @@ export function createMediaApi(client: SupabaseClient, projectUrl: string, publi
         'id,item_id,owner_id,original_name,mime_type,byte_count,sha256,original_path,preview_path,has_preview,uploaded_at',
       ).eq('item_id', itemId).not('uploaded_at', 'is', null).order('uploaded_at', { ascending: false }).order('id').limit(100).retry(false).abortSignal(s), signal);
       if (error) throw new Error('Medien konnten nicht geladen werden.');
-      const media = z.array(mediaSchema).parse(data);
-      const paths = media.filter(item => item.has_preview).map(item => item.preview_path);
-      const urls = new Map<string, string>();
-      if (paths.length) {
-        const { data: signed } = await bucket.createSignedUrls(paths, 600);
-        signal.throwIfAborted();
-        signed?.forEach(value => { if (value.path && value.signedUrl) urls.set(value.path, value.signedUrl); });
-      }
-      return media.map(item => ({ ...item, previewUrl: urls.get(item.preview_path) }));
+      return z.array(mediaSchema).parse(data);
     },
-    async open(media: Media, download: boolean, signal: AbortSignal) {
+    async read(media: Media, preview: boolean, signal: AbortSignal) {
+      const path = [media.owner_id, media.id, preview ? 'preview.jpg' : 'original'].join('/');
+      const type = preview ? 'image/jpeg' : media.mime_type;
+      const limit = preview ? previewBytes : media.byte_count;
+      const token = await accessToken();
+      const url = new URL('/storage/v1/object/authenticated/' + bucketName + '/' + path, projectUrl);
+      const file = await withDeadline(async s => {
+        const response = await fetch(url, { signal: s, cache: 'no-store', redirect: 'error',
+          headers: { apikey: publicKey, Authorization: 'Bearer ' + token } });
+        if (!response.ok || !response.body || Number(response.headers.get('content-length')) > limit) throw new Error('Datei ist nicht verfügbar.');
+        const chunks: Uint8Array<ArrayBuffer>[] = [];
+        let size = 0;
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const next = await reader.read();
+            if (next.done) break;
+            size += next.value.byteLength;
+            if (size > limit) { await reader.cancel(); throw new Error('Unerwartete Dateigröße.'); }
+            chunks.push(next.value);
+          }
+        } finally { reader.releaseLock(); }
+        if (!size || (!preview && size !== media.byte_count)) throw new Error('Unerwartete Dateigröße.');
+        return new Blob(chunks, { type });
+      }, signal, 45_000);
+      if (!await matchesFileType(file, type) || (!preview && await mediaHash(file) !== media.sha256)) {
+        throw new Error('Datei stimmt nicht mit dem gespeicherten Original überein.');
+      }
       signal.throwIfAborted();
-      const { data, error } = await bucket.createSignedUrl(media.original_path, 120, download ? { download: media.original_name } : {});
-      signal.throwIfAborted();
-      if (error || !data?.signedUrl) throw new Error('Original konnte nicht geöffnet werden.');
-      return data.signedUrl;
+      return file;
     },
     async upload(itemId: string, file: File, signal: AbortSignal, update: (phase: UploadStage, percent?: number) => void) {
       update('preparing');
       const type = mediaFileType(file);
+      if (!await matchesFileType(file, type)) throw new Error('Der Dateiinhalt passt nicht zum Dateityp.');
       const digest = await mediaHash(file);
       signal.throwIfAborted();
       const { data, error } = await withDeadline(s => client.rpc('inventory_media_begin', {

@@ -8,6 +8,38 @@ type UploadState = { phase: 'idle' | 'done' }
   | { phase: 'paused'; message: string; remaining: File[] };
 const running = (phase: UploadState['phase']) => phase === 'preparing' || phase === 'sending' || phase === 'confirming';
 
+function MediaThumbnail({ file, api, enabled }: { file: Media; api: MediaApi; enabled: boolean }) {
+  const placeholder = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<string>();
+  useEffect(() => {
+    if (!enabled || !file.has_preview || !placeholder.current) return;
+    const controller = new AbortController();
+    let url: string | undefined;
+    const load = () => {
+      void api.read(file, true, controller.signal).then(blob => {
+        if (controller.signal.aborted) return;
+        url = URL.createObjectURL(blob);
+        setPreview(url);
+      }).catch(() => {});
+    };
+    const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { observer?.disconnect(); load(); }
+    }, { rootMargin: '100px' });
+    if (observer) observer.observe(placeholder.current);
+    else load();
+    return () => {
+      controller.abort();
+      observer?.disconnect();
+      if (url) URL.revokeObjectURL(url);
+      setPreview(undefined);
+    };
+  }, [api, enabled, file]);
+  return <div ref={placeholder} className="media-thumb">
+    <span aria-hidden="true">{file.mime_type === 'application/pdf' ? 'PDF' : 'Foto'}</span>
+    {preview && <img key={preview} src={preview} alt="" decoding="async" onError={event => { event.currentTarget.hidden = true; }}/>}
+  </div>;
+}
+
 export default function ItemMedia({ api, owner, email, itemId, active, online, onProtected }: {
   api: MediaApi; owner: string; email?: string; itemId: string; active: boolean; online: boolean;
   onProtected: (value: boolean) => void;
@@ -23,7 +55,7 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
   const openControl = useRef<AbortController | null>(null);
   const alive = useRef(false);
   const viewer = useRef<HTMLDialogElement>(null);
-  const [opened, setOpened] = useState<{ file: Media; view?: string; download: string } | null>(null);
+  const [opened, setOpened] = useState<{ file: Media; url: string } | null>(null);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState('');
   const titleId = useId();
@@ -34,8 +66,14 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
     return () => { alive.current = false; uploadControl.current?.abort(); openControl.current?.abort(); };
   }, []);
   useEffect(() => { onProtected(transferring); return () => onProtected(false); }, [onProtected, transferring]);
-  useEffect(() => { if (!online) { uploadControl.current?.abort(); openControl.current?.abort(); } }, [online]);
-  useEffect(() => { if (opened && !viewer.current?.open) viewer.current?.showModal(); }, [opened]);
+  useEffect(() => {
+    if (!online) { uploadControl.current?.abort(); openControl.current?.abort(); viewer.current?.close(); }
+  }, [online]);
+  useEffect(() => {
+    if (!opened) return;
+    if (!viewer.current?.open) viewer.current?.showModal();
+    return () => URL.revokeObjectURL(opened.url);
+  }, [opened]);
 
   async function send(files: File[]) {
     if (!online || uploadControl.current || !files.length) return;
@@ -66,11 +104,8 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
     setOpenError('');
     setOpening(true);
     try {
-      const [download, view] = await Promise.all([
-        api.open(file, true, controller.signal),
-        file.mime_type.startsWith('image/') ? api.open(file, false, controller.signal) : undefined,
-      ]);
-      if (alive.current && !controller.signal.aborted) setOpened({ file, view, download });
+      const blob = await api.read(file, false, controller.signal);
+      if (alive.current && !controller.signal.aborted) setOpened({ file, url: URL.createObjectURL(blob) });
     } catch {
       if (alive.current && !controller.signal.aborted) setOpenError('Datei konnte nicht geöffnet werden. Versuche es erneut.');
     } finally {
@@ -113,21 +148,17 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
     {online && (items.isPending ? <p className="muted" role="status">Laden …</p> : items.isError ? <p className="error" role="alert">Medien konnten nicht geladen werden.</p> :
       items.data?.length ? <ul className="media-grid">{items.data.map(file => <li key={file.id}>
         <button type="button" className="quiet media-card" disabled={opening} onClick={() => void open(file)}>
-          <div className="media-thumb">
-            <span aria-hidden="true">{file.mime_type === 'application/pdf' ? 'PDF' : 'Foto'}</span>
-            {file.previewUrl && <img key={file.previewUrl} src={file.previewUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
-              onError={event => { event.currentTarget.hidden = true; }}/>}
-          </div>
+          <MediaThumbnail file={file} api={api} enabled={online && active}/>
           <span className="media-caption"><strong>{file.original_name}</strong><time dateTime={file.uploaded_at ?? undefined}>{file.uploaded_at && new Date(file.uploaded_at).toLocaleDateString('de-DE',{ day: 'numeric', month: 'short', year: 'numeric' })}</time></span>
         </button>
       </li>)}</ul> : <p className="muted">Keine Fotos oder Belege</p>)}
     <dialog ref={viewer} className="settings-dialog media-viewer" aria-labelledby={titleId} onClose={() => setOpened(null)}>
       {opened && <>
         <div className="settings-heading"><h2 id={titleId}>{opened.file.original_name}</h2><button className="quiet settings-close" type="button" aria-label="Datei schließen" onClick={() => viewer.current?.close()}>×</button></div>
-        {opened.view && <img className="media-original" src={opened.view} alt={opened.file.original_name} referrerPolicy="no-referrer"
+        {opened.file.mime_type.startsWith('image/') && <img className="media-original" src={opened.url} alt={opened.file.original_name}
           onError={event => { event.currentTarget.hidden = true; }}/>}
         <p className="muted">{[email, opened.file.uploaded_at && new Date(opened.file.uploaded_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })].filter(Boolean).join(' · ')}</p>
-        <a className="media-download" href={opened.download} rel="noreferrer">Original herunterladen</a>
+        <a className="media-download" href={opened.url} download={opened.file.original_name}>Original herunterladen</a>
       </>}
     </dialog>
   </section>;

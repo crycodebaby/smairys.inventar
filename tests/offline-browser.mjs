@@ -14,6 +14,8 @@ const projectOrigin = new URL(project);
 const authKey = 'sb-' + projectOrigin.hostname.split('.')[0] + '-auth-token';
 const dist = resolve('dist');
 const originalWorker = await readFile(resolve(dist, 'sw.js'), 'utf8');
+const config = JSON.parse(await readFile('vercel.json', 'utf8'));
+const csp = config.headers.flatMap(route => route.headers).find(header => header.key === 'Content-Security-Policy').value;
 const contentTypes = { '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.html': 'text/html' };
 let worker = originalWorker;
 const server = createServer(async (request, response) => {
@@ -25,7 +27,7 @@ const server = createServer(async (request, response) => {
   }
   try {
     const body = file === 'sw.js' ? worker : await readFile(resolve(dist, file));
-    response.writeHead(200, { 'content-type': contentTypes[extname(file)], 'cache-control': 'no-cache' }).end(body);
+    response.writeHead(200, { 'content-type': contentTypes[extname(file)], 'cache-control': 'no-cache', 'content-security-policy': csp }).end(body);
   } catch { response.writeHead(404).end(); }
 });
 await new Promise((ready, fail) => {
@@ -45,6 +47,7 @@ const calls = [];
 const writes = new Map();
 const mediaRecords = new Map();
 const uploadedPaths = new Set();
+const uploadedBytes = new Map();
 const testPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAIAAAUAAen63NgAAAAASUVORK5CYII=', 'base64');
 const expectedMediaHash = Buffer.from(await crypto.subtle.digest('SHA-256', testPng)).toString('hex');
 const largePdf = Buffer.alloc(6 * 1024 * 1024 + 128);
@@ -78,7 +81,12 @@ try {
   context.setDefaultTimeout(12_000);
   context.setDefaultNavigationTimeout(25_000);
   const failures = [];
-  context.on('page', page => page.on('pageerror', error => failures.push(error.message)));
+  context.on('page', page => {
+    page.on('pageerror', error => failures.push(error.message));
+    page.on('console', message => {
+      if (message.type() === 'error' && /violates.*Content Security Policy/i.test(message.text())) failures.push(message.text());
+    });
+  });
   const storageOrigin = new URL(projectOrigin);
   if (storageOrigin.hostname.endsWith('.supabase.co')) storageOrigin.hostname = storageOrigin.hostname.replace(/\.supabase\.co$/, '.storage.supabase.co');
   await context.route(storageOrigin.origin + '/storage/v1/upload/resumable**', async route => {
@@ -127,6 +135,11 @@ try {
       return;
     }
     if (url.pathname === '/auth/v1/logout') { await route.fulfill({ status: 204, headers }); return; }
+    if (url.pathname === '/auth/v1/otp') {
+      assert.equal(request.postDataJSON().create_user, false);
+      await route.fulfill({ json: {}, headers });
+      return;
+    }
     if (url.pathname === '/auth/v1/user') { await route.fulfill({ json: fixtureSession(robin).user, headers }); return; }
     if (url.pathname === '/rest/v1/inventory_media') {
       assert.equal(url.searchParams.get('item_id'), 'eq.' + objectId);
@@ -156,6 +169,10 @@ try {
       assert.ok(request.headers().authorization.startsWith('Bearer '));
       assert.ok(!uploadedPaths.has(path));
       uploadedPaths.add(path);
+      const body = await new Request('https://fixture.invalid', {
+        method: 'POST', headers: { 'content-type': request.headers()['content-type'] }, body: request.postDataBuffer(),
+      }).formData();
+      uploadedBytes.set(path, Buffer.from(await body.get('').arrayBuffer()));
       await route.fulfill({ json: { Key: path }, headers });
       return;
     }
@@ -170,15 +187,12 @@ try {
       await route.fulfill({ json: file, headers });
       return;
     }
-    if (url.pathname === '/storage/v1/object/sign/inventory-media') {
-      const { paths, expiresIn } = request.postDataJSON();
-      assert.equal(expiresIn, 600);
-      await route.fulfill({ json: paths.map(path => ({ path, signedURL: '/object/sign/inventory-media/' + path + '?token=test' })), headers });
-      return;
-    }
-    if (url.pathname.startsWith('/storage/v1/object/sign/inventory-media/')) {
-      if (request.method() === 'GET') await route.fulfill({ body: testPng, contentType: 'image/png', headers });
-      else await route.fulfill({ json: { signedURL: '/object/sign/inventory-media/original?token=test' }, headers });
+    if (url.pathname.startsWith('/storage/v1/object/authenticated/inventory-media/')) {
+      assert.ok(request.headers().authorization.startsWith('Bearer '));
+      const path = url.pathname.split('/').slice(6).join('/');
+      const bytes = uploadedBytes.get(path);
+      assert.ok(bytes);
+      await route.fulfill({ body: bytes, contentType: path.endsWith('.jpg') ? 'image/jpeg' : 'image/png', headers });
       return;
     }
     assert.equal(url.pathname, '/rest/v1/rpc/inventory_command');
@@ -203,6 +217,9 @@ try {
   const page = await context.newPage();
   await page.goto(app, { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: 'Anmelden' }).waitFor();
+  await page.getByRole('textbox', { name: 'E-Mail-Adresse' }).fill('fixture@example.invalid');
+  await page.getByRole('button', { name: 'Anmeldelink senden' }).click();
+  await page.getByText('Öffne den Link aus der neuesten E-Mail.', { exact: false }).waitFor();
   await page.evaluate(({ key, session }) => localStorage.setItem(key, JSON.stringify(session)), { key: authKey, session: fixtureSession(robin) });
   await page.reload();
   await page.getByRole('button', { name: /Ampeg Offline/ }).click();
@@ -210,12 +227,18 @@ try {
   await page.getByRole('tab', { name: 'Medien' }).click();
   await page.getByText('Keine Fotos oder Belege').waitFor();
   const fileInput = page.getByLabel('Dateien hinzufügen');
+  await fileInput.setInputFiles({ name: 'Falscher Typ.png', mimeType: 'image/png', buffer: Buffer.from('harmless text') });
+  await page.getByText('Der Dateiinhalt passt nicht zum Dateityp.').waitFor();
+  assert.equal(uploadedPaths.size, 0);
   await fileInput.setInputFiles({ name: 'Typenschild.png', mimeType: 'image/png', buffer: testPng });
   const mediaCard = page.getByRole('button', { name: /Typenschild.png/ });
   await mediaCard.waitFor();
   assert.equal(uploadedPaths.size, 2);
   await mediaCard.click();
-  await page.getByRole('dialog', { name: 'Typenschild.png' }).getByRole('link', { name: 'Original herunterladen' }).waitFor();
+  const download = page.getByRole('dialog', { name: 'Typenschild.png' }).getByRole('link', { name: 'Original herunterladen' });
+  await download.waitFor();
+  assert.match(await download.getAttribute('href'), /^blob:/);
+  assert.equal(await download.getAttribute('download'), 'Typenschild.png');
   await page.getByRole('button', { name: 'Datei schließen' }).click();
   await fileInput.setInputFiles({ name: 'Kopie.png', mimeType: 'image/png', buffer: testPng });
   await page.getByRole('tabpanel', { name: 'Medien' }).getByText('Gespeichert', { exact: true }).waitFor();

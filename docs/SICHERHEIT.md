@@ -1,0 +1,20 @@
+# Sicherheitsprüfung am 26. November 2026
+
+| Bereich | Prüfung und Ergebnis |
+| --- | --- |
+| Öffentliche Oberfläche | Die Anmeldeseite, JavaScript/CSS, der Service Worker, Projektkennung, öffentlicher Supabase-Clientschlüssel und Verbindungsmetadaten sind abrufbar. Die anonymen Proben für Objekte, Notizen, Medien, Schreibprotokoll und RPC lieferten HTTP 401. MCP fordert Authentifizierung. |
+| Zugang | Eine private Datenbanktabelle führt genau eine bestehende bestätigte Benutzer-ID. RLS beschränkt Reads und der Befehlsserver prüft dieselbe ID vor Schreibvorgängen. Die verifizierten JWT-Anmeldemethoden müssen E-Mail-Einmalanmeldung enthalten. Passwort- und anonyme Sitzungen sowie Sitzungen ohne OTP-Nachweis erhalten keinen Inventarzugriff. |
+| Registrierung | Die Web-App sendet Magic-Link-Anfragen mit `shouldCreateUser: false`. Während der Prüfung meldete der öffentliche Auth-Status `disable_signup: false`. Der separate Schalter „Allow new users to sign up“ in Supabase muss noch deaktiviert werden. Erforderlich ist ein zugriffsberechtigtes Dashboard oder ein Management-Zugang mit Auth-Konfigurationsrechten. Die Einzelkonto-Sperre im Inventar greift bereits unabhängig davon. |
+| Brute Force | Keine automatisierten Anmeldeversuche oder echten E-Mails in den Tests. Die Supabase-Dokumentation beschreibt Drosselung für Versand, Token-Anfragen und Verifizierung. Das Projektlimit wurde nicht durch Lastversuche gemessen. Der Zugriff auf das E-Mail-Postfach und den authentifizierten Browser bleibt die zentrale Vertrauensgrenze. |
+| XSS und SQL | React rendert Objektangaben und Notizen als Text. Externe Links erlauben HTTP(S) ohne eingebettete Zugangsdaten. Die CSP beschränkt Skripte und Worker auf die App, Netzwerkzugriffe auf die App und Supabase. Dynamische Kategoriefarben benötigen Inline-Stilattribute. Der SQL-Dispatcher verwendet typisierte Werte und feste SQL-Anweisungen. |
+| Anhänge | Der Bucket ist privat. RLS erlaubt bestätigte Originale und Vorschauen über authentifizierte Downloads. Die Regeln erlauben keine signierten Freigabelinks und keine Dateiliste im Bucket. Der Browser prüft Dateityp-Kennung, Größe und SHA-256 des Originals. Vorschauen werden als Bilder angezeigt. PDFs werden heruntergeladen. Die Dateikennung ist eine Plausibilitätsprüfung und kein Malware-Scan. Der ermittelte Storage-Bestand war leer. |
+| Offline | Offlineansichten und noch nicht synchronisierte Textaufträge bleiben in kontogetrennten Browserdaten. Ein entsperrtes Gerät mit Zugriff auf das Browserprofil gehört zur Vertrauensgrenze. Private Medien liegen außerhalb des Service-Worker-Caches. |
+| Repository und Abhängigkeiten | Verfolgte Dateinamen der geprüften Git-Historie enthielten keine Originalfotos, privaten Datenbankdateien oder Umgebungsdateien. Ein gezielter Scan fand in den verfolgten Dateien keine Supabase-Secret-Keys oder privaten Schlüssel in PEM-Form. `npm audit` meldete bei der Prüfung null bekannte Schwachstellen. |
+
+Die SQL-Regressionstests verwenden zwei Testkonten und rollen ihre Änderungen zurück. Sie prüfen Kontoabgrenzung, Passwortablehnung, fehlenden OTP-Nachweis sowie Zugriff auf bestätigte und unbestätigte Dateien. Der Browsertest deckt die Produktions-CSP, Dateitypprüfung, Blob-Download, TUS-Übertragung und Offlineabläufe mit simulierten Antworten ab. Die Prüfung umfasst keine Lasttests oder physische Apple-Geräte.
+
+- [Supabase, Allgemeine Auth-Konfiguration](https://supabase.com/docs/guides/auth/general-configuration)
+- [Supabase, Auth Rate Limits](https://supabase.com/docs/guides/auth/rate-limits)
+- [Supabase, JWT-Felder und Anmeldemethoden](https://supabase.com/docs/guides/auth/jwt-fields)
+- [Supabase, Storage-Operationen und RLS](https://supabase.com/docs/guides/storage/schema/helper-functions)
+- [OWASP, Content Security Policy](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html)
