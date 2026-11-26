@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { mediaAccept } from './inventory-media.ts';
 import type { Media, MediaApi, UploadStage } from './inventory-media.ts';
@@ -40,9 +40,12 @@ function MediaThumbnail({ file, api, enabled }: { file: Media; api: MediaApi; en
   </div>;
 }
 
-export default function ItemMedia({ api, owner, email, itemId, active, online, onProtected }: {
+export default function ItemMedia({ api, owner, email, itemId, active, online, onProtected, requestedMedia, onRequestHandled, onAddNote }: {
   api: MediaApi; owner: string; email?: string; itemId: string; active: boolean; online: boolean;
   onProtected: (value: boolean) => void;
+  requestedMedia: string | null;
+  onRequestHandled: () => void;
+  onAddNote?: (file: Media) => void;
 }) {
   const cache = useQueryClient();
   const queryKey = ['inventory-media', owner, itemId];
@@ -54,6 +57,8 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
   const uploadControl = useRef<AbortController | null>(null);
   const openControl = useRef<AbortController | null>(null);
   const alive = useRef(false);
+  const canOpen = useRef(false);
+  canOpen.current = active && online;
   const viewer = useRef<HTMLDialogElement>(null);
   const [opened, setOpened] = useState<{ file: Media; url: string } | null>(null);
   const [opening, setOpening] = useState(false);
@@ -67,8 +72,9 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
   }, []);
   useEffect(() => { onProtected(transferring); return () => onProtected(false); }, [onProtected, transferring]);
   useEffect(() => {
-    if (!online) { uploadControl.current?.abort(); openControl.current?.abort(); viewer.current?.close(); }
-  }, [online]);
+    if (!online) uploadControl.current?.abort();
+    if (!active || !online) { openControl.current?.abort(); viewer.current?.close(); }
+  }, [active, online]);
   useEffect(() => {
     if (!opened) return;
     if (!viewer.current?.open) viewer.current?.showModal();
@@ -119,7 +125,7 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
     }
   }
 
-  async function open(file: Media) {
+  const open = useCallback(async (file: Media) => {
     if (!online || openControl.current) return;
     const controller = new AbortController();
     openControl.current = controller;
@@ -134,7 +140,21 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
       openControl.current = null;
       if (alive.current) setOpening(false);
     }
-  }
+  }, [api, online]);
+  const { data: mediaItems, isPending: mediaPending, refetch: refreshMedia } = items;
+  useEffect(() => {
+    if (!active || !requestedMedia || !online || mediaPending) return;
+    onRequestHandled();
+    const file = mediaItems?.find(candidate => candidate.id === requestedMedia);
+    if (file) { void open(file); return; }
+    // Another device may have attached a new file since this gallery was cached.
+    void refreshMedia({ cancelRefetch: false }).then(result => {
+      if (!alive.current || !canOpen.current) return;
+      const source = result.data?.find(candidate => candidate.id === requestedMedia);
+      if (source) void open(source);
+      else setOpenError(result.isError ? 'Quelldatei konnte nicht geladen werden.' : 'Quelldatei wurde nicht gefunden.');
+    });
+  }, [active, requestedMedia, online, mediaPending, mediaItems, refreshMedia, onRequestHandled, open]);
 
   const progress = upload.phase === 'preparing' ? 'Wird vorbereitet' : upload.phase === 'sending' ? 'Wird hochgeladen' : 'Wird bestätigt';
   return <section className="media-section" aria-label="Fotos und Belege">
@@ -180,7 +200,10 @@ export default function ItemMedia({ api, owner, email, itemId, active, online, o
         {opened.file.mime_type.startsWith('image/') && <img className="media-original" src={opened.url} alt={opened.file.original_name}
           onError={event => { event.currentTarget.hidden = true; }}/>}
         <p className="muted">{[email, opened.file.uploaded_at && new Date(opened.file.uploaded_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })].filter(Boolean).join(' · ')}</p>
-        <a className="media-download" href={opened.url} download={opened.file.original_name}>Original herunterladen</a>
+        <div className="actions">
+          {onAddNote && <button className="quiet" type="button" onClick={() => { viewer.current?.close(); onAddNote(opened.file); }}>Notiz zur Datei</button>}
+          <a className="media-download" href={opened.url} download={opened.file.original_name}>Original herunterladen</a>
+        </div>
       </>}
     </dialog>
   </section>;

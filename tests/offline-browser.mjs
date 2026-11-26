@@ -208,7 +208,9 @@ try {
     else if (name === 'get_item') data = { item: args.item_id === objectId ? item : secondItem, notes: args.item_id === objectId ? notes : [] };
     else if (name === 'add_note') {
       if (!writes.has(args.operation_id)) {
-        const note = { ...args, id: crypto.randomUUID(), created_at: new Date().toISOString() };
+        const media = args.media_id && [...mediaRecords.values()].find(record => record.id === args.media_id);
+        const note = { ...args, id: crypto.randomUUID(), created_at: new Date().toISOString(),
+          ...(media ? { media_name: media.original_name } : {}) };
         writes.set(args.operation_id, note);
         notes.push(note);
       }
@@ -358,6 +360,30 @@ try {
   assert.equal(writes.size, 1);
   assert.equal(calls.filter(name => name === 'add_note').length, 1);
   console.log('Offline-Neustart, lokale Suche, fehlende Details, persistente Notiz, Wiederverbindung geprüft.');
+
+  await reopened.getByRole('tab', { name: 'Medien' }).click();
+  await reopened.getByRole('button', { name: /Typenschild.png/ }).click();
+  await reopened.getByRole('button', { name: 'Notiz zur Datei', exact: true }).click();
+  await reopened.getByRole('tabpanel', { name: /Notizen/ }).getByText('Typenschild.png', { exact: true }).waitFor();
+  await reopened.getByLabel('Titel *').fill('Notiz zum Typenschild');
+  await reopened.getByLabel('Wortgetreue Abschrift').fill('B-15 [3?]');
+  await setOffline(true);
+  await reopened.getByText('Offline · lokale Kopie', { exact: true }).waitFor();
+  await reopened.getByRole('button', { name: 'Notiz speichern' }).click();
+  await reopened.getByRole('button', { name: 'Lokal gespeichert' }).waitFor();
+  assert.equal(writes.size, 1);
+  await reopened.reload();
+  await setOffline(false);
+  await reopened.waitForFunction(() => !document.querySelector('.connection-state'));
+  await reopened.getByRole('button', { name: /Ampeg Offline/ }).click();
+  await reopened.getByRole('tab', { name: /Notizen/ }).click();
+  await reopened.getByRole('heading', { name: 'Notiz zum Typenschild' }).waitFor();
+  assert.equal(writes.size, 2);
+  assert.equal(notes.at(-1).media_id, mediaRecords.get(expectedMediaHash).id);
+  await reopened.getByRole('button', { name: 'Typenschild.png', exact: true }).click();
+  await reopened.getByRole('dialog', { name: 'Typenschild.png' }).waitFor();
+  await reopened.getByRole('button', { name: 'Datei schließen' }).click();
+  console.log('Dateibezug bleibt beim Offline-Neustart erhalten und öffnet anschließend das Original.');
 
   await setOffline(true);
   await reopened.evaluate(({ key, session }) => localStorage.setItem(key, JSON.stringify(session)), { key: authKey, session: fixtureSession(other, true) });

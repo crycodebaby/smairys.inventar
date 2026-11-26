@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useId, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { changedFields, draftKeys, itemDraft, rebaseDraft, RevisionConflict } from './inventory-client.ts';
 import type { InventoryApi, Item, ItemDraft, Label, Note } from './inventory-client.ts';
@@ -53,6 +53,8 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
   const [mediaProtected, setMediaProtected] = useState(false);
   const [tab, setTab] = useState<'object' | 'notes' | 'media'>('object');
   const [mediaVisited, setMediaVisited] = useState(false);
+  const [noteSource, setNoteSource] = useState<{ id: string; name: string } | null>(null);
+  const [requestedMedia, setRequestedMedia] = useState<string | null>(null);
   const tabs = media ? ['object', 'media', 'notes'] as const : ['object', 'notes'] as const;
   const selectTab = (next: typeof tab) => { setTab(next); if (next === 'media') setMediaVisited(true); };
   const tabId = useId();
@@ -91,27 +93,51 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     </form>
     </div>
     {media && <div role="tabpanel" id={`${tabId}-media-panel`} aria-labelledby={`${tabId}-media`} hidden={tab !== 'media'}>
-      {mediaVisited && <Suspense fallback={<p className="muted" role="status">Laden …</p>}><ItemMedia {...media} itemId={base.id} active={tab === 'media'} onProtected={setMediaProtected}/></Suspense>}
+      {mediaVisited && <Suspense fallback={<p className="muted" role="status">Laden …</p>}>
+        <ItemMedia {...media} itemId={base.id} active={tab === 'media'} onProtected={setMediaProtected}
+          requestedMedia={requestedMedia} onRequestHandled={() => setRequestedMedia(null)}
+          onAddNote={noteProtected ? undefined : file => {
+            setNoteSource({ id: file.id, name: file.original_name });
+            selectTab('notes');
+          }}/>
+      </Suspense>}
     </div>}
-    <div role="tabpanel" id={`${tabId}-notes-panel`} aria-labelledby={`${tabId}-notes`} hidden={tab !== 'notes'} className="notes-section">{notes.length ? <ul className="notes-list">{notes.map(note => <li key={note.id}><div className="section-header"><h4>{note.title}</h4>{note.pinned && <span className="badge">Angeheftet</span>}</div>{note.verbatim_text && <><span className="eyebrow">Abschrift</span><p className="preserve-space">{note.verbatim_text}</p></>}{note.interpretation && <><span className="eyebrow">Einordnung</span><p className="preserve-space">{note.interpretation}</p></>}{noteLinks([note]).map(link => <a className="source-link" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{new URL(link.url).hostname} ↗</a>)}<span className="muted">{note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}</span></li>)}</ul> : null}
-      <NewNote api={api} item={base} onCreated={onNote} onProtected={setNoteProtected} />
+    <div role="tabpanel" id={`${tabId}-notes-panel`} aria-labelledby={`${tabId}-notes`} hidden={tab !== 'notes'} className="notes-section">
+      {notes.length > 0 && <ul className="notes-list">{notes.map(note => <li key={note.id}>
+        <div className="section-header"><h4>{note.title}</h4>{note.pinned && <span className="badge">Angeheftet</span>}</div>
+        {note.media_id && (media?.online
+          ? <button className="quiet small note-source" type="button" onClick={() => { setRequestedMedia(note.media_id ?? null); selectTab('media'); }}>{note.media_name ?? 'Quelldatei öffnen'}</button>
+          : <p className="muted note-source">{note.media_name ?? 'Datei verknüpft'}</p>)}
+        {note.verbatim_text && <><span className="eyebrow">Abschrift</span><p className="preserve-space">{note.verbatim_text}</p></>}
+        {note.interpretation && <><span className="eyebrow">Einordnung</span><p className="preserve-space">{note.interpretation}</p></>}
+        {noteLinks([note]).map(link => <a className="source-link" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{new URL(link.url).hostname} ↗</a>)}
+        <span className="muted">{note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}</span>
+      </li>)}</ul>}
+      <NewNote api={api} item={base} source={noteSource} clearSource={() => setNoteSource(null)}
+        onCreated={note => { setNoteSource(null); onNote(note); }} onProtected={setNoteProtected} />
     </div>
   </section>;
 }
 
-function NewNote({ api, item, onCreated, onProtected }: { api: InventoryApi; item: Item; onCreated: (note: Note) => void; onProtected: (value: boolean) => void }) {
+function NewNote({ api, item, source, clearSource, onCreated, onProtected }: {
+  api: InventoryApi; item: Item; source: { id: string; name: string } | null; clearSource: () => void;
+  onCreated: (note: Note) => void; onProtected: (value: boolean) => void;
+}) {
   const [title, setTitle] = useState(''); const [verbatim, setVerbatim] = useState(''); const [interpretation, setInterpretation] = useState('');
   const [attribution, setAttribution] = useState<Note['attribution']>('unknown'); const [pinned, setPinned] = useState(false);
   const write = useInventoryWrite(api, 'add_note'); const prefix = useId();
+  const titleField = useRef<HTMLInputElement>(null);
   const dirty = !write.queued && (!!(title || verbatim || interpretation || pinned || attribution !== 'unknown') || write.locked);
   useEffect(() => { onProtected(dirty); return () => onProtected(false); }, [dirty, onProtected]);
+  useEffect(() => { if (source) titleField.current?.focus(); }, [source]);
   async function save(event: FormEvent) {
     event.preventDefault();
-    const result = await write.submit({ item_id: item.id, title, verbatim_text: verbatim, interpretation, attribution, pinned });
+    const result = await write.submit({ item_id: item.id, ...(source ? { media_id: source.id } : {}), title, verbatim_text: verbatim, interpretation, attribution, pinned });
     if (result) { setTitle(''); setVerbatim(''); setInterpretation(''); setAttribution('unknown'); setPinned(false); onCreated(result.note); }
   }
   return <form onSubmit={save} className="note-form"><h3>Neue Notiz</h3><fieldset disabled={write.locked}><legend className="sr-only">Neue Notiz</legend>
-    <label htmlFor={`${prefix}-title`}>Titel *</label><input id={`${prefix}-title`} required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} placeholder="Zum Beispiel: Lothars Aufschrift" />
+    {source && <div className="note-source-field"><span>{source.name}</span><button className="quiet icon-control" type="button" aria-label="Dateiverknüpfung entfernen" onClick={clearSource}>×</button></div>}
+    <label htmlFor={`${prefix}-title`}>Titel *</label><input ref={titleField} id={`${prefix}-title`} required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} placeholder="Zum Beispiel: Lothars Aufschrift" />
     <label htmlFor={`${prefix}-verbatim`}>Wortgetreue Abschrift</label><textarea id={`${prefix}-verbatim`} rows={3} maxLength={20000} value={verbatim} onChange={event => setVerbatim(event.target.value)} placeholder="Unsichere Zeichen als [unleserlich] oder [3?] markieren" />
     <label htmlFor={`${prefix}-interpretation`}>Einordnung / Interpretation</label><textarea id={`${prefix}-interpretation`} rows={3} maxLength={20000} value={interpretation} onChange={event => setInterpretation(event.target.value)} />
     <label htmlFor={`${prefix}-attribution`}>Zuschreibung der Notiz</label><select id={`${prefix}-attribution`} value={attribution} onChange={event => setAttribution(event.target.value as Note['attribution'])}><option value="unknown">Ungeklärt</option><option value="reported_by_user">Laut Nutzer</option><option value="verified">Belegt</option></select>

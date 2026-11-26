@@ -15,6 +15,9 @@ declare
   target uuid;
   first_upload public.inventory_media;
   second_upload public.inventory_media;
+  another_item uuid;
+  args jsonb;
+  note_result jsonb;
 begin
   target := (public.inventory_command('create_item', jsonb_build_object('operation_id',gen_random_uuid(),'title','Medientest'))->'item'->>'id')::uuid;
   first_upload := jsonb_populate_record(null::public.inventory_media,public.inventory_media_begin(target,'test.jpg','image/jpeg',30,repeat('a',64)));
@@ -26,6 +29,13 @@ begin
   perform set_config('inventory.media_item',target::text,true);
   perform set_config('inventory.media_path',first_upload.original_path,true);
   perform set_config('inventory.media_preview_path',first_upload.preview_path,true);
+  args := jsonb_build_object('operation_id',gen_random_uuid(),'item_id',target,'media_id',first_upload.id,'title','Mediennotiz','verbatim_text','B-15 [3?]','interpretation','Typ vermutlich B-15');
+  begin
+    perform public.inventory_command('add_note',args);
+    raise exception 'Unconfirmed media accepted as note source';
+  exception when no_data_found then
+    if sqlerrm <> 'MEDIA_NOT_FOUND' then raise; end if;
+  end;
   begin
     perform public.inventory_media_confirm(first_upload.id);
     raise exception 'Confirmation accepted without a stored object';
@@ -49,6 +59,22 @@ begin
   if first_upload.uploaded_at is null or not first_upload.has_preview or second_upload.uploaded_at is distinct from first_upload.uploaded_at then
     raise exception 'Confirmation did not return the same completed upload';
   end if;
+  note_result := public.inventory_command('add_note',args);
+  if note_result->'note'->>'media_id' is distinct from first_upload.id::text
+    or note_result->'note'->>'media_name' is distinct from 'test.jpg'
+    or public.inventory_command('add_note',args) is distinct from note_result then
+    raise exception 'Source linkage or idempotent retry failed';
+  end if;
+  if public.inventory_command('get_item',jsonb_build_object('item_id',target))->'notes'->0->>'media_name' is distinct from 'test.jpg' then
+    raise exception 'Detail read omitted the source filename';
+  end if;
+  another_item := (public.inventory_command('create_item',jsonb_build_object('operation_id',gen_random_uuid(),'title','Anderes Objekt'))->'item'->>'id')::uuid;
+  begin
+    perform public.inventory_command('add_note',args || jsonb_build_object('item_id',another_item,'operation_id',gen_random_uuid()));
+    raise exception 'Another item accepted the same source';
+  exception when no_data_found then
+    if sqlerrm <> 'MEDIA_NOT_FOUND' then raise; end if;
+  end;
   if (select count(*) from storage.objects where bucket_id = 'inventory-media') <> 2 then
     raise exception 'Owner cannot see the stored original and preview';
   end if;

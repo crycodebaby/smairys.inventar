@@ -72,7 +72,7 @@ export function createInventoryHandler(config: InventoryConfig) {
       if (commandError) {
         if (commandError.code === '23505') throw new Error('LABEL_NAME_CONFLICT');
         if (['22023', '22P02', '23514', '23502'].includes(commandError.code)) throw new Error('INVALID_ARGUMENTS');
-        const known = ['IDEMPOTENCY_CONFLICT', 'ITEM_NOT_FOUND', 'LABEL_NOT_FOUND', 'UNKNOWN_COMMAND', 'INVALID_ARGUMENTS'];
+        const known = ['IDEMPOTENCY_CONFLICT', 'ITEM_NOT_FOUND', 'LABEL_NOT_FOUND', 'MEDIA_NOT_FOUND', 'UNKNOWN_COMMAND', 'INVALID_ARGUMENTS'];
         throw new Error(known.find(code => commandError.message.includes(code)) ?? 'COMMAND_FAILED');
       }
       return result as Record<string, unknown>;
@@ -117,7 +117,7 @@ export function createInventoryHandler(config: InventoryConfig) {
       if (error instanceof ZodError) return response({ error: 'INVALID_ARGUMENTS', issues: error.issues }, 400);
       if (error instanceof SyntaxError) return response({ error: 'INVALID_JSON' }, 400);
       const message = error instanceof Error ? error.message : 'COMMAND_FAILED';
-      const known = ['REVISION_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'LABEL_NAME_CONFLICT', 'ITEM_NOT_FOUND', 'LABEL_NOT_FOUND', 'UNKNOWN_COMMAND', 'INVALID_ARGUMENTS'];
+      const known = ['REVISION_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'LABEL_NAME_CONFLICT', 'ITEM_NOT_FOUND', 'LABEL_NOT_FOUND', 'MEDIA_NOT_FOUND', 'UNKNOWN_COMMAND', 'INVALID_ARGUMENTS'];
       const code = known.find(value => message.includes(value));
       const status = code?.includes('CONFLICT') ? 409 : code?.endsWith('NOT_FOUND') ? 404 : code ? 400 : 500;
       return response({ error: code ?? 'COMMAND_FAILED' }, status);

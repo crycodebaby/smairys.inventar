@@ -31,3 +31,12 @@ test('JSON metadata never includes an older stored location', () => {
   assert.equal(Object.hasOwn(exported, 'location'), false);
   assert.ok(!file.content.includes(item.location));
 });
+
+test('a linked note retains the source filename in text and its stable ID in JSON', () => {
+  const source = { ...notes[0], media_id: crypto.randomUUID(), media_name: 'Typenschild.png' };
+  const options = { metadata: false, notes: true, links: false };
+  const markdown = buildObjectExport(item, [source], [], { ...options, format: 'markdown' });
+  const json = buildObjectExport(item, [source], [], { ...options, format: 'json' });
+  assert.match(markdown.content, /Quelle: Typenschild\.png/);
+  assert.equal(JSON.parse(json.content).notes[0].media_id, source.media_id);
+});

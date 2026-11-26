@@ -1,6 +1,6 @@
 # Objekte, Medien und Wissen
 
-Stand 26. November 2026. Der erste Medienablauf erfasst private Fotos und PDF-Belege am Gegenstand, zeigt JPEG-Vorschauen und stellt die Originale zum Download bereit. Der folgende Zielvertrag beschreibt auch Bildnotizen, Merkmalsbelege, weitere Versionen und Quellen-/Preisdatensätze. Der Text-/JSON-Export umfasst Objektangaben, Notizen und daraus erkannte HTTP-Links.
+Stand 26. November 2026. Der Medienablauf erfasst private Fotos und PDF-Belege am Gegenstand, zeigt JPEG-Vorschauen und stellt die Originale zum Download bereit. Eine Notiz kann über die Datei erstellt werden und trägt dann ihren Quellenbezug. Der folgende Zielvertrag beschreibt auch Bildbereiche, Merkmalsbelege, weitere Versionen und Quellen-/Preisdatensätze.
 
 ## Produktkern
 
@@ -26,6 +26,12 @@ Originale liegen im privaten Bucket `inventory-media`. RLS erlaubt authentifizie
 Die nächste Importstufe verknüpft die 18 geprüften Tubes-Originale mit der Sammlung und dokumentiert die spätere Zuordnung. Exakte Dateiduplikate verwenden den Hash. Mögliche Objektduplikate anhand lesbarer Modell- und Serienangaben werden später zur Prüfung vorgeschlagen. Eine Seriennummer auf einem eingebauten Lautsprecher gehört gegebenenfalls nur zum Lautsprecher.
 
 Bis 6 MiB läuft der Upload als direkter Versuch. Für größere Dateien bis 25 MiB verwendet die App den nachgeladenen `tus-js-client` zur Wiederaufnahme. Nach einem Neustart kann dieselbe Datei erneut ausgewählt werden. Im geöffneten Objekt bleiben pausierte Dateien bis zum Schließen des Editors verfügbar. Die persistente Offline-Dateiwarteschlange und die Wiederaufnahme nach einem Kontowechsel bleiben getrennte Ausbaustufen.
+
+## Dateibezogene Notizen
+
+Im Dateifenster öffnet „Notiz zur Datei“ das vorhandene Notizformular mit Quellenbezug. Abschrift, Einordnung, Zuschreibung und Anheften bleiben getrennt. Eine gespeicherte Notiz öffnet die Quelldatei über den Dateinamen. Ist die Datei noch nicht in der Medienliste dieses Geräts, wird die Liste einmal aktualisiert. Der Text-Export enthält den Dateinamen, der JSON-Export zusätzlich die Medien-ID.
+
+Der Schreibauftrag speichert die Medien-ID über dieselbe Offline-Warteschlange wie eine gewöhnliche Notiz. Der Server akzeptiert nur ein bestätigtes Medium desselben Objekts und Kontos. Ein zusammengesetzter Fremdschlüssel bindet die Zuordnung auch auf Datenbankebene. Browser- und SQL-Tests prüfen Offline-Neustart, korrektes Wiederöffnen, unveränderte Wiederholung des Schreibauftrags sowie Ablehnung unbestätigter oder falsch zugeordneter Dateien.
 
 ## KI und OCR
 

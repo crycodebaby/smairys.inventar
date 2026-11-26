@@ -11,6 +11,7 @@ const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string()
 const noteSchema = z.object({
   id: z.uuid(), item_id: z.uuid(), title: z.string(), verbatim_text: z.string(), interpretation: z.string(),
   attribution: z.enum(['unknown', 'reported_by_user', 'verified']), pinned: z.boolean(), created_at: z.string(),
+  media_id: z.uuid().nullish(), media_name: z.string().nullish(),
 });
 const resultSchemas = {
   search_inventory: z.object({ items: z.array(itemSchema) }),
@@ -64,6 +65,9 @@ export function createInventoryApi(transport: CommandTransport): InventoryApi {
       const status = response.status ?? 0;
       const auth = status === 401 || code === '28000' || code === 'PGRST301' || code === 'PGRST303';
       if (auth) throw new InventoryError('Die Anmeldung muss erneuert werden.', !reading);
+      if (code === 'P0002' && response.error.message === 'MEDIA_NOT_FOUND') {
+        throw new InventoryError('Die verknüpfte Datei ist nicht mehr verfügbar.');
+      }
       if (reading) {
         const subject = name === 'list_labels' ? 'Kategorien konnten' : name === 'get_item' ? 'Das Objekt konnte' : 'Die Objektliste konnte';
         throw new InventoryError(subject + ' nicht geladen werden.');

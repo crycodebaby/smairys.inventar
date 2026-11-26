@@ -37,7 +37,8 @@ export function buildObjectExport(item: Item, notes: Note[], labels: Label[], se
     ...(category ? [`Kategorie: ${category.name}`] : []), ...(item.description ? ['', item.description] : []),
   ].join('\n'));
   if (selection.notes) for (const note of notes) sections.push([
-    `## ${note.title}`, ...(note.verbatim_text ? ['### Abschrift', note.verbatim_text] : []),
+    `## ${note.title}`, ...(note.media_name ? [`Quelle: ${note.media_name}`] : []),
+    ...(note.verbatim_text ? ['### Abschrift', note.verbatim_text] : []),
     ...(note.interpretation ? ['### Einordnung', note.interpretation] : []),
     `Zuschreibung: ${note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}`,
   ].join('\n\n'));

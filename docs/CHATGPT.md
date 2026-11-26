@@ -30,7 +30,7 @@ Alle Inventarzugriffe brauchen eine gültige Benutzeranmeldung. Öffentlich abru
 | list_labels | Kategorien, Zustände, Arbeitsschritte und Markierungen auflisten |
 | create_item | Gegenstand erfassen |
 | update_item | Benannte Felder unter Angabe der gelesenen Revision ändern |
-| add_note | Abschrift und Interpretation als getrennte Felder anheften |
+| add_note | Abschrift und Interpretation als getrennte Felder anheften, optional mit bestätigter Datei-ID desselben Objekts |
 | create_label | Eigene Kategorie, Zustandsbezeichnung oder Markierung erstellen |
 
 Jeder Schreibauftrag erhält eine operation_id als UUID. Bei ungewissem Ergebnis werden dieselbe UUID und dieselben Argumente wiederholt. Eine veränderte Nutzlast unter derselben UUID wird abgewiesen. Erfolgreiche Schreibaufträge werden mit Ergebnis und optionaler OAuth-Client-ID in inventory_command_log protokolliert. Ein Revisionskonflikt liefert die aktuelle Fassung zurück. Der Client behält seine gewünschte Änderung zur Klärung.
