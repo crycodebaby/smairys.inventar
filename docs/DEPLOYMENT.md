@@ -1,0 +1,29 @@
+# Web-Hosting
+
+Die Web-App wird aus crycodebaby/smairys.inventar, Branch main, mit Vercel bereitgestellt. Das Vercel-Projekt heißt smairys-inventar und liegt im vorhandenen Hobby-Team robin-schmeiries-projects. Die Produktionsadresse ist https://inventar.smairys.de.
+
+## Build
+
+Node.js 24.x, npm ci, npm run build, Ausgabeordner dist, Framework Vite. vercel.json hält die Build-Konfiguration und HTTP-Header fest. Die Git-Anbindung übernimmt neue Commits auf main als Produktionsdeployments; weitere Branches erhalten Vorschauen.
+
+Vor einer Veröffentlichung npm run build und npm test ausführen. Das Deployment anschließend auf READY und die veröffentlichte Commit-ID prüfen. Die Anmeldung braucht zusätzlich die Supabase-URL-Konfiguration; ein erfolgreicher Build bestätigt keinen vollständigen Anmeldevorgang.
+
+## Umgebung
+
+VITE_APP_URL, VITE_SUPABASE_URL und VITE_SUPABASE_PUBLISHABLE_KEY werden im Vercel-Projekt für production, preview und development hinterlegt. Diese Werte sind für den Browser bestimmt. Privilegierte Serviceschlüssel bleiben vollständig außerhalb der Web-App. Umgebungsänderungen erfordern einen neuen Build.
+
+Die Vercel-Dateien, Zugangsdaten, Originalfotos und die lokale SQLite-Datei werden nicht in Git aufgenommen. Vercel baut ausschließlich den versionierten Quellcode. Öffentlich ausgeliefert wird der Ordner dist. Die Login-Seite ist öffentlich erreichbar; Datenzugriff setzt die Supabase-Benutzeranmeldung und die bestehenden Eigentümerprüfungen voraus.
+
+## Domain
+
+Nur inventar.smairys.de dem Inventar-Projekt zuweisen. Das konkrete CNAME-Ziel aus dessen Vercel-Domainkonfiguration übernehmen und bei Cloudflare für den Namen inventar als Nur DNS eintragen. Vorhandene Wildcard-, Hauptdomain-, Mail-, TXT-, CAA- und NS-Einträge bleiben bestehen. Eine zusätzliche Eigentumsprüfung bekommt ihren eigenen TXT-Wert. Eine DNS-Konfiguration gilt erst nach bestätigter Auflösung, gültigem HTTPS und erfolgreichem Seitenabruf als geprüft.
+
+Am 26. November 2026 bestätigte Vercel die bestehende Domain mit verified=true, misconfigured=false und ohne DNS-Konflikte. Der vorhandene CNAME verweist auf smairys.de. Als bevorzugtes direktes CNAME-Ziel liefert Vercel für das Inventar-Projekt 84b0759c98d9516d.vercel-dns-017.com. Die bestehende, von Vercel akzeptierte DNS-Konfiguration wurde bei der ersten Bereitstellung nicht verändert. Ein späterer direkter CNAME würde ausschließlich den Eintrag inventar betreffen.
+
+## Supabase
+
+Die Auth Site URL lautet https://inventar.smairys.de. Die erlaubte Anmelderückkehr muss auch den authorization_id-Parameter der OAuth-Zustimmung erhalten. OAuth-Server, Authorization Path / und public.inventory_access_token_hook werden nach docs/CHATGPT.md eingerichtet. Die Dashboard-Anmeldung ist vom Benutzerkonto innerhalb der Web-App getrennt.
+
+## Nachweise
+
+Aktueller Deployment-, Domain- und Anmeldestatus stehen in STATUS.md. Foto-Uploads und Offlinebetrieb sind eigene Arbeitspakete und nicht Bestandteil des ersten Web-Hostings.

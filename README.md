@@ -13,7 +13,7 @@ Inventar, Dokumentation und Recherche zum musikalischen Nachlass von Lothar. Gep
 
 ## Projektstand
 
-Das Repository enthält die erste React-Web-App mit Anmeldung und OAuth-Zustimmungsansicht, sieben Inventarbefehle, einen MCP-Server und optionale Seitenwerkzeuge. Die Befehlsschnittstelle ist im bestehenden Supabase-Projekt eingerichtet. Web-Hosting, OAuth-Freischaltung und die persönliche ChatGPT-Verknüpfung stehen aus. Der aktuelle Stand steht in [STATUS.md](STATUS.md).
+Das Repository enthält die erste React-Web-App mit Anmeldung und OAuth-Zustimmungsansicht, sieben Inventarbefehle, einen MCP-Server und optionale Seitenwerkzeuge. Die Befehlsschnittstelle ist im bestehenden Supabase-Projekt eingerichtet. Das Vercel-Projekt smairys-inventar ist mit main verbunden und der Domain inventar.smairys.de zugeordnet. Die Hosting-Konfiguration steht in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Der aktuelle Prüfstand einschließlich OAuth und ChatGPT steht in [STATUS.md](STATUS.md).
 
 ## Dokumentation
 

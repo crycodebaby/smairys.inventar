@@ -2,6 +2,9 @@
 
 ## Live eingerichtet und überprüft
 
+- Vercel-Projekt smairys-inventar, ID prj_3FdWUXoXeRBzUcO8CDKO51U7mDYg, ist im Hobby-Team robin-schmeiries-projects mit GitHub main verbunden. Node.js 24.x, Vite, npm ci, npm run build und dist sind eingerichtet; die drei öffentlichen VITE-Konfigurationswerte sind hinterlegt.
+- inventar.smairys.de ist dem Vercel-Projekt zugeordnet und als verified bestätigt. Vercel meldet für die vorhandene DNS-Konfiguration misconfigured=false und keine Konflikte. Der abschließende HTTPS- und Oberflächentest nach dem konfigurierten Build steht noch aus. Andere Domains und DNS-Einträge wurden nicht geändert.
+
 - Supabase-Projekt xywnhifzahwcmclrfsil ist aktiv. Die Migrationen 20261125234917 und 20261125235513 sind angewendet.
 - Die Edge Function inventory stellt HTTP-Befehle und einen OAuth-geschützten MCP-Adapter bereit. Sie prüft Benutzeranmeldung, für MCP zusätzlich Client-ID und Ressourcen-Audience.
 - Sieben Befehle unterstützen Suche, Detailabruf, Bezeichnungen auflisten, Gegenstand erfassen, revisionsgeschützt ändern, Notiz anheften und eigene Bezeichnung erstellen.
@@ -28,7 +31,7 @@
 
 ## Offen
 
-- Hosting der Web-App, kompletter OAuth-Durchlauf, persönliche Installation in ChatGPT, Foto-Uploads, Datenabgleich und Offlinebetrieb sind offen.
+- Abschließende Hosting-Abnahme nach dem konfigurierten Build, kompletter OAuth-Durchlauf, persönliche Installation in ChatGPT, Foto-Uploads, Datenabgleich und Offlinebetrieb sind offen.
 - Supabase Free ist festgelegt. Die Auswahl eines zusätzlichen Offline-Abgleichs sowie Fotovolumen und Gerätetests stehen aus.
 - Der Supabase-OAuth-Server meldete bei der letzten öffentlichen Prüfung feature_disabled. Die vorhandene Token-Hook-Funktion muss in den Auth-Einstellungen ausgewählt werden.
 - Der Nutzer hat das bestehende Projekt bestätigt. Das Browserkonto wird bei dessen direktem Aufruf zur Organisationsübersicht geleitet. Für Dashboard-Einstellungen ist der Projektzugriff dieses Kontos zu ergänzen. Der verbundene Supabase-Zugang dieser Sitzung hat Zugriff auf das bestehende Projekt.
@@ -38,6 +41,6 @@
 
 ## Nächste Arbeitseinheit
 
-Dashboardzugriff des vorgesehenen Kontos auf das bestehende Projekt klären und Web-App unter inventar.smairys.de bereitstellen. Danach OAuth-Server, Zustimmungsseite und Token Hook verbinden und die persönliche ChatGPT-Verbindung testen. Werte und Nachweise stehen in docs/CHATGPT.md. Der spätere Offline-/Fotodurchstich bleibt in docs/ABNAHME.md beschrieben.
+Das konfigurierte GitHub-Deployment unter inventar.smairys.de abschließend prüfen. Danach OAuth-Server, Zustimmungsseite und Token Hook verbinden und die persönliche ChatGPT-Verbindung testen. Hosting-Werte stehen in docs/DEPLOYMENT.md, OAuth-Werte und Nachweise in docs/CHATGPT.md. Der spätere Offline-/Fotodurchstich bleibt in docs/ABNAHME.md beschrieben.
 
 Status eines Tests wird als offen, bestanden oder fehlgeschlagen geführt. Eine Dokumentationsprüfung gilt als Quellenbeleg. Ein Gerätetest braucht ein protokolliertes Ergebnis auf dem benannten Gerät.
