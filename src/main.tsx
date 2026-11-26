@@ -166,7 +166,7 @@ function App() {
   }
 
   return <div className="shell">
-    <header><a href="/" className="brand">smairys<span>.inventar</span></a></header>
+    <header className="site-header"><a href="/" className="brand"><img src="/app-icon.svg" alt="" width="34" height="34"/><span>smairys<span className="brand-suffix">.inventar</span></span></a></header>
     <main className={identity && !authorizationId ? 'workspace-main' : 'access-main'}>
       <section className="glass" aria-label="Inventarzugang">
         {!supabase ? <><h2>Verbindung vorbereiten</h2><p>Supabase-URL und Publishable Key in der Umgebung hinterlegen, um die Anmeldung zu starten.</p></> : access.kind === 'starting' ? <p className="state-message" role="status">Inventar wird geöffnet …</p> : !identity || (authorizationId && !session) ? <>

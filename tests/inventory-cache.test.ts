@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { applyConfirmedInventoryWrite, createInventoryQueryClient, inventoryKeys } from '../src/inventory-cache.ts';
 import type { Item, Note } from '../src/inventory-client.ts';
 
-const item: Item = { id: crypto.randomUUID(), inventory_number: '1', title: 'Ampeg', brand: '', model: '', location: '', description: '', category_id: null, revision: 1 };
+const item: Item = { id: crypto.randomUUID(), inventory_number: '1', title: 'Ampeg', brand: '', model: '', description: '', category_id: null, revision: 1 };
 const note: Note = { id: crypto.randomUUID(), item_id: item.id, title: 'Typenschild', verbatim_text: 'B-15', interpretation: '', attribution: 'unknown', pinned: true, created_at: '2026-11-26T00:00:00Z' };
 
 test('a note updates only its own object, deduplicates retries and keeps other accounts and queries fresh', async () => {

@@ -23,14 +23,15 @@ test('an uncertain create can retry the immutable operation and receives one con
 
 test('a revision conflict preserves the draft and rebasing keeps unrelated server changes', async () => {
   const base = { ...item, inventory_number: '1' };
-  const mine = { ...itemDraft(base), location: 'Schrank 2' };
+  const mine = { ...itemDraft(base), model: 'ECC83' };
   const current = { ...base, brand: 'Valvo', revision: 2 };
   const api = createInventoryApi(async () => ({ data: { error: 'REVISION_CONFLICT', current }, error: null }));
   await assert.rejects(api('update_item', { operation_id: crypto.randomUUID(), item_id: item.id, expected_revision: 1, changes: changedFields(itemDraft(base), mine) }), error => error instanceof RevisionConflict && error.current.revision === 2 && !error.uncertain);
   const rebased = rebaseDraft(itemDraft(base), mine, current);
   assert.equal(rebased.brand, 'Valvo');
-  assert.equal(rebased.location, 'Schrank 2');
-  assert.deepEqual(changedFields(itemDraft(current), rebased), { location: 'Schrank 2' });
+  assert.equal(rebased.model, 'ECC83');
+  assert.deepEqual(changedFields(itemDraft(current), rebased), { model: 'ECC83' });
+  assert.equal('location' in rebased, false);
   assert.equal(mine.brand, 'Ungeprüft');
 });
 

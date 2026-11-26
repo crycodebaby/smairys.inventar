@@ -62,7 +62,7 @@ try {
   }
   assert.equal((await fetch(app)).status, 200);
   browser = await chromium.launch({ executablePath, args: ['--no-proxy-server'] });
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
   const setOffline = async offline => { simulateOffline = offline; await context.setOffline(offline); };
   context.setDefaultTimeout(12_000);
   context.setDefaultNavigationTimeout(25_000);
@@ -108,6 +108,41 @@ try {
   await page.reload();
   await page.getByRole('button', { name: /Ampeg Offline/ }).click();
   await page.getByRole('heading', { name: 'Ampeg Offline' }).waitFor();
+  assert.equal(await page.getByLabel(/Fundort|Lagerort/).count(), 0);
+  assert.equal(await page.getByLabel(/Bezeichnung/).evaluate(field => parseFloat(getComputedStyle(field).fontSize) >= 16), true);
+  for (const width of [320, 390, 820, 1180]) {
+    await page.setViewportSize({ width, height: 844 });
+    const layout = await page.evaluate(expectedWidth => {
+      const box = document.querySelector('.settings-trigger').getBoundingClientRect();
+      return {
+        fits: innerWidth === expectedWidth && document.documentElement.scrollWidth <= innerWidth,
+        touchTarget: box.width >= 44 && box.height >= 44,
+        nativeScrollbar: getComputedStyle(document.documentElement).scrollbarWidth === 'auto',
+      };
+    }, width);
+    assert.deepEqual(layout, { fits: true, touchTarget: true, nativeScrollbar: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const objectMenu = page.getByLabel('Objektaktionen');
+  await objectMenu.click();
+  await page.getByRole('button', { name: 'Objekt aktualisieren' }).waitFor();
+  await objectMenu.press('Escape');
+  await page.getByRole('button', { name: 'Objekt aktualisieren' }).waitFor({ state: 'hidden' });
+  assert.equal(await objectMenu.evaluate(element => document.activeElement === element), true);
+  await page.emulateMedia({ contrast: 'more' });
+  assert.equal(await page.getByRole('tab', { name: 'Objekt' }).evaluate(tab => getComputedStyle(tab).backgroundImage), 'none');
+  await page.emulateMedia({ contrast: null });
+  await page.setViewportSize({ width: 390, height: 340 });
+  await page.getByRole('button', { name: 'Zurück', exact: true }).click();
+  const listPosition = await page.evaluate(() => { window.scrollTo(0, 100); return window.scrollY; });
+  assert.ok(listPosition > 0);
+  await page.getByRole('button', { name: /Ampeg Offline/ }).click();
+  await page.getByRole('heading', { name: 'Ampeg Offline' }).waitFor();
+  assert.equal(await page.evaluate(() => window.scrollY), 0);
+  await page.getByRole('button', { name: 'Zurück', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.scrollY), listPosition);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: /Ampeg Offline/ }).click();
   await page.waitForFunction(async () => {
     if (!navigator.serviceWorker.controller) return false;
     // Let the IndexedDB transactions complete before simulating a browser restart.

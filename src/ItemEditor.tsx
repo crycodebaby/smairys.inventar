@@ -6,14 +6,14 @@ import { useInventoryWrite } from './use-inventory-write.ts';
 import { ObjectActions } from './ObjectActions.tsx';
 import { noteLinks } from './object-export.ts';
 
-const fieldLabels: Record<keyof ItemDraft, string> = { title: 'Bezeichnung', brand: 'Marke', model: 'Typ / Modell', location: 'Fundort / Lagerort', description: 'Beschreibung' };
+const fieldLabels: Record<keyof ItemDraft, string> = { title: 'Bezeichnung', brand: 'Marke', model: 'Typ / Modell', description: 'Beschreibung' };
 
 export function ItemFields({ value, onChange, disabled }: { value: ItemDraft; onChange: (value: ItemDraft) => void; disabled: boolean }) {
   const prefix = useId();
-  return <>{draftKeys.map(key => <div className={key === 'description' ? 'field field-wide' : 'field'} key={key}>
+  return <>{draftKeys.map(key => <div className={key === 'title' || key === 'description' ? 'field field-wide' : 'field'} key={key}>
     <label htmlFor={`${prefix}-${key}`}>{fieldLabels[key]}{key === 'title' ? ' *' : ''}</label>
     {key === 'description' ? <textarea id={`${prefix}-${key}`} rows={4} maxLength={10000} value={value[key]} disabled={disabled} onChange={event => onChange({ ...value, [key]: event.target.value })} /> :
-      <input id={`${prefix}-${key}`} required={key === 'title'} maxLength={key === 'location' ? 500 : 200} value={value[key]} disabled={disabled} onChange={event => onChange({ ...value, [key]: event.target.value })} />}
+      <input id={`${prefix}-${key}`} required={key === 'title'} maxLength={200} value={value[key]} disabled={disabled} onChange={event => onChange({ ...value, [key]: event.target.value })} />}
   </div>)}</>;
 }
 
@@ -63,7 +63,7 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
     if (result) { setBase(result.item); setDraft(itemDraft(result.item)); onSaved(result.item); }
   }
   return <section className="detail-panel" aria-label="Gegenstand bearbeiten">
-    <div className="section-header"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><div className="actions">{onReload && <button className="quiet small" disabled={protectedWork} onClick={onReload} aria-label="Objekt aktualisieren">↻</button>}<ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} /></div></div>
+    <div className="section-header object-heading"><div><span className="eyebrow">#{base.inventory_number}</span><h2>{base.title}</h2></div><ObjectActions item={base} notes={notes} labels={labels} disabled={protectedWork} onReload={onReload}/></div>
     {(refreshAvailable || initial.revision > base.revision) && protectedWork && <p role="status" className="notice">Neue Fassung verfügbar. Deine Eingaben bleiben erhalten.</p>}
     {base.category_id && <p className="muted">Kategorie: {labels.find(label => label.id === base.category_id)?.name ?? 'Nicht geladen'}</p>}
     <div role="tablist" aria-label="Objektbereiche" className="detail-tabs">{(['object', 'notes'] as const).map(value => <button key={value} type="button" role="tab" id={`${tabId}-${value}`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => {

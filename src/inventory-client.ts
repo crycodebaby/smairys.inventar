@@ -4,7 +4,7 @@ import type { CommandName } from '../supabase/functions/_shared/commands.ts';
 
 const itemSchema = z.object({
   id: z.uuid(), inventory_number: z.union([z.string(), z.number()]).transform(String),
-  title: z.string(), brand: z.string(), model: z.string(), location: z.string(), description: z.string(),
+  title: z.string(), brand: z.string(), model: z.string(), description: z.string(),
   category_id: z.uuid().nullable(), revision: z.number().int().positive(),
 });
 const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/), kind: z.enum(['category', 'condition', 'workflow', 'marker']) });
@@ -22,7 +22,7 @@ const resultSchemas = {
 export type Item = z.output<typeof itemSchema>;
 export type Label = z.output<typeof labelSchema>;
 export type Note = z.output<typeof noteSchema>;
-export type ItemDraft = Pick<Item, 'title' | 'brand' | 'model' | 'location' | 'description'>;
+export type ItemDraft = Pick<Item, 'title' | 'brand' | 'model' | 'description'>;
 export type CommandInput<N extends CommandName> = z.input<(typeof commandSchemas)[N]>;
 export type CommandResult<N extends CommandName> = z.output<(typeof resultSchemas)[N]>;
 export function parseInventoryResult<N extends CommandName>(name: N, data: unknown): CommandResult<N> {
@@ -90,9 +90,9 @@ export function prepareWrite<N extends WriteName>(name: N, input: Omit<CommandIn
   return { name, input: parsed.data as CommandInput<N> };
 }
 
-export const draftKeys = ['title', 'brand', 'model', 'location', 'description'] as const;
+export const draftKeys = ['title', 'brand', 'model', 'description'] as const;
 export function itemDraft(item?: Item): ItemDraft {
-  return { title: item?.title ?? '', brand: item?.brand ?? '', model: item?.model ?? '', location: item?.location ?? '', description: item?.description ?? '' };
+  return { title: item?.title ?? '', brand: item?.brand ?? '', model: item?.model ?? '', description: item?.description ?? '' };
 }
 export function changedFields(base: ItemDraft, draft: ItemDraft): Partial<ItemDraft> {
   return Object.fromEntries(draftKeys.filter(key => base[key] !== draft[key]).map(key => [key, draft[key]]));

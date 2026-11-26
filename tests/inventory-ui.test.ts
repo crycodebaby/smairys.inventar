@@ -14,7 +14,7 @@ let ui: typeof import('../src/ItemEditor.tsx');
 let client: typeof import('../src/inventory-client.ts');
 let testing: typeof import('@testing-library/react');
 const stableProtection = () => {};
-const item: Item = { id: crypto.randomUUID(), inventory_number: '1', title: 'ECC83', brand: 'Ungeprüft', model: '', location: 'Tubes', description: '', category_id: null, revision: 1 };
+const item: Item = { id: crypto.randomUUID(), inventory_number: '1', title: 'ECC83', brand: 'Ungeprüft', model: '', description: '', category_id: null, revision: 1 };
 
 before(async () => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://inventar.example.test' });
@@ -55,20 +55,21 @@ test('the editor shows both revisions and preserves an unrelated server edit aft
   const current = { ...item, brand: 'Valvo', revision: 2 };
   const api = client.createInventoryApi(async (_name, input) => {
     requests.push(input as Record<string, unknown>);
-    return { data: requests.length === 1 ? { error: 'REVISION_CONFLICT', current } : { item: { ...current, location: 'Schrank 2', revision: 3 } }, error: null };
+    return { data: requests.length === 1 ? { error: 'REVISION_CONFLICT', current } : { item: { ...current, model: 'ECC83', revision: 3 } }, error: null };
   });
   const view = testing.render(createElement(ui.ItemEditor, { api, initial: item, notes: [], labels: [], onSaved: value => saved.push(value), onNote: stableProtection, onProtected: stableProtection, refreshAvailable: false, onReload: stableProtection }));
-  testing.fireEvent.change(view.getByLabelText('Fundort / Lagerort'), { target: { value: 'Schrank 2' } });
+  assert.equal(view.queryByLabelText(/Fundort|Lagerort/), null);
+  testing.fireEvent.change(view.getByLabelText('Typ / Modell'), { target: { value: 'ECC83' } });
   testing.fireEvent.click(view.getByRole('button', { name: 'Änderungen speichern' }));
   await view.findByRole('heading', { name: 'Aktuellen Stand vergleichen' });
-  assert.equal((view.getByLabelText('Fundort / Lagerort') as HTMLInputElement).value, 'Schrank 2');
+  assert.equal((view.getByLabelText('Typ / Modell') as HTMLInputElement).value, 'ECC83');
   assert.equal(saved.length, 0);
   testing.fireEvent.click(view.getByRole('button', { name: 'Meine Änderungen übernehmen' }));
   assert.equal((view.getByLabelText('Marke') as HTMLInputElement).value, 'Valvo');
   testing.fireEvent.click(view.getByRole('button', { name: 'Änderungen speichern' }));
   await testing.waitFor(() => assert.equal(saved.length, 1));
   assert.equal(requests[1].expected_revision, 2);
-  assert.deepEqual(requests[1].changes, { location: 'Schrank 2' });
+  assert.deepEqual(requests[1].changes, { model: 'ECC83' });
   assert.notEqual(requests[1].operation_id, requests[0].operation_id);
 });
 

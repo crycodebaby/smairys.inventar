@@ -22,7 +22,7 @@ Originaldateien behalten ihre Herkunft und bekommen einen SHA-256-Fingerabdruck.
 
 | Datensatz | Informationen und Beziehungen |
 | --- | --- |
-| Gegenstand | Inventarnummer, Kategorie, Sammlung, Lagerort, Aufdruck, vermuteter oder belegter Typ, Zustand, Prüfstatus und Bearbeitungsstand |
+| Gegenstand | Inventarnummer, Kategorie, Sammlung, Aufdruck, vermuteter oder belegter Typ, Zustand, Prüfstatus und Bearbeitungsstand |
 | Datei | Originalname, relativer Pfad, Fingerabdruck, Dateigröße, Herkunft und Bezug zum Gegenstand oder Dokument |
 | Notiz oder Beleg | Originalabbildung, wortgetreue Abschrift, unleserliche Stellen, Zuschreibung zu Lothar, Datum und Interpretation |
 | Quelle | Herstellerdatenblatt, Archiv, Verkaufsbeleg oder Nutzerangabe mit Fundstelle, Abrufdatum und optionaler lokaler Kopie |
@@ -43,7 +43,7 @@ Der vom Nutzer erwähnte Beleg von 1998 von „BTB Elektronik Vertriebs GmbH“ 
 
 ## Ablauf bis zur Verkaufsentscheidung
 
-1. Gegenstand mit Inventarnummer, Fundort und Fotos erfassen.
+1. Gegenstand mit Inventarnummer und Fotos erfassen.
 2. Aufdrucke und beiliegende Notizen zuordnen.
 3. Typ und Zweck recherchieren, Quellen und offene Fragen speichern.
 4. Zustand und gegebenenfalls fachkundige Prüfung dokumentieren.
@@ -52,7 +52,7 @@ Der vom Nutzer erwähnte Beleg von 1998 von „BTB Elektronik Vertriebs GmbH“ 
 7. Entscheidung über Behalten, weitere Prüfung oder Verkauf festhalten.
 8. Angebot vorbereiten, Plattform und Preis bestimmen, Verkauf bis Zahlung und Übergabe verfolgen.
 
-Die App soll nach Typ, Marke, Kategorie, Fundort, Inventarnummer, Handschrift, Quelle und Bearbeitungsstand suchen können. Angebote werden vor Veröffentlichung geprüft. Ein abgeschlossener Verkauf bleibt mit seinen Belegen im Archiv nachvollziehbar.
+Die App soll nach Typ, Marke, Kategorie, Inventarnummer, Handschrift, Quelle und Bearbeitungsstand suchen können. Angebote werden vor Veröffentlichung geprüft. Ein abgeschlossener Verkauf bleibt mit seinen Belegen im Archiv nachvollziehbar.
 
 ## Individuelle Erweiterung und Oberfläche
 

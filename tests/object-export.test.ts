@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildObjectExport, noteLinks } from '../src/object-export.ts';
-import type { Item, Note } from '../src/inventory-client.ts';
+import type { Note } from '../src/inventory-client.ts';
 
-const item: Item = { id: crypto.randomUUID(), inventory_number: '17', title: 'Ampeg / Box', brand: 'Ampeg', model: 'Offen', location: 'Privater Lagerort', description: '', category_id: null, revision: 1 };
+const item = { id: crypto.randomUUID(), inventory_number: '17', title: 'Ampeg / Box', brand: 'Ampeg', model: 'Offen', location: 'Privater Lagerort', description: '', category_id: null, revision: 1 };
 const notes: Note[] = [{ id: crypto.randomUUID(), item_id: item.id, title: 'Vergleich', verbatim_text: 'Angebot https://www.ebay.de/itm/123.', interpretation: 'https://www.ebay.de/itm/123 (nicht als Verkauf bestätigt)', attribution: 'unknown', pinned: false, created_at: '2026-11-26T00:00:00Z' }];
 
 test('selective export omits unselected notes and private object metadata', () => {
@@ -20,5 +20,14 @@ test('text export preserves uncertain transcription and keeps link collections d
   assert.match(file.content, /nicht als Verkauf bestätigt/);
   assert.match(file.content, /Zuschreibung: Ungeklärt/);
   assert.equal(noteLinks(notes).length, 1);
+  assert.doesNotMatch(file.content, /Lagerort|Fundort/);
   assert.throws(() => buildObjectExport(item, notes, [], { metadata: false, notes: false, links: false, format: 'json' }));
+});
+
+test('JSON metadata never includes an older stored location', () => {
+  const file = buildObjectExport(item, notes, [], { metadata: true, notes: false, links: false, format: 'json' });
+  const exported = JSON.parse(file.content).object;
+  assert.equal(exported.title, item.title);
+  assert.equal(Object.hasOwn(exported, 'location'), false);
+  assert.ok(!file.content.includes(item.location));
 });

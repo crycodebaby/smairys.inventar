@@ -6,7 +6,7 @@ import { clearOfflineInventory, readLocalCatalog, rememberInventoryQuery, restor
 import { accessTransition, rememberedIdentity, syncPhase } from '../src/offline-state.ts';
 
 const project = 'https://test.supabase.co';
-const item = { id: crypto.randomUUID(), inventory_number: '7', title: 'Ampeg B-15', brand: 'Ampeg', model: 'B-15', location: '', description: '', category_id: null, revision: 1 };
+const item = { id: crypto.randomUUID(), inventory_number: '7', title: 'Ampeg B-15', brand: 'Ampeg', model: 'B-15', description: '', category_id: null, revision: 1 };
 
 test('only the current account and project can restore saved views, with original freshness', async () => {
   const owner = crypto.randomUUID();

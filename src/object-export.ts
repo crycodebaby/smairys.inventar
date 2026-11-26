@@ -20,14 +20,18 @@ export function buildObjectExport(item: Item, notes: Note[], labels: Label[], se
   const category = labels.find(label => label.id === item.category_id);
   const data = {
     schema_version: 1, exported_at: now.toISOString(), object_reference: { id: item.id, inventory_number: item.inventory_number },
-    ...(selection.metadata ? { object: { ...item, category: category ? { name: category.name, color: category.color } : null } } : {}),
+    ...(selection.metadata ? { object: {
+      id: item.id, inventory_number: item.inventory_number, title: item.title, brand: item.brand, model: item.model,
+      description: item.description, category_id: item.category_id, revision: item.revision,
+      category: category ? { name: category.name, color: category.color } : null,
+    } } : {}),
     ...(selection.notes ? { notes } : {}), ...(selection.links ? { links } : {}),
   };
   const filename = `${item.inventory_number}-${item.title}`.normalize('NFKC').replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 100).replace(/-+$/, '') || 'inventar';
   if (selection.format === 'json') return { filename: filename + '.json', mime: 'application/json;charset=utf-8', content: JSON.stringify(data, null, 2) };
   const sections: string[] = [`# ${item.title}`, `Inventar #${item.inventory_number}`];
   if (selection.metadata) sections.push([
-    `Marke: ${item.brand || '—'}`, `Typ / Modell: ${item.model || '—'}`, `Lagerort: ${item.location || '—'}`,
+    `Marke: ${item.brand || '—'}`, `Typ / Modell: ${item.model || '—'}`,
     ...(category ? [`Kategorie: ${category.name}`] : []), ...(item.description ? ['', item.description] : []),
   ].join('\n'));
   if (selection.notes) for (const note of notes) sections.push([

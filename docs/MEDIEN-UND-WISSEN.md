@@ -23,7 +23,7 @@ Der nächste durchgängige Ablauf ist Objekt öffnen, mehrere Fotos auswählen, 
 
 Originale liegen privat. Vorschaubilder werden getrennt erzeugt; Darstellbarkeit von HEIC auf den Zielgeräten wird geprüft. Eine fehlende Vorschau darf nicht zur stillen Löschung oder Umwandlung des Originals führen. Wiederholbare Uploadvorhaben, Übertragungsabbruch und fremde Konten gehören zur Abnahme nach DATENVERTRAG.md.
 
-Automatische Zuordnung liefert Vorschläge: exakte Dateiduplikate über den Hash, mögliche Objektduplikate über lesbare Modell-/Serienangaben und Fundort. Unsichere Übereinstimmungen werden nicht still zusammengeführt. Eine Seriennummer auf einem eingebauten Lautsprecher ist beispielsweise nicht automatisch die Seriennummer der gesamten Box.
+Automatische Zuordnung erkennt exakte Dateiduplikate über den Hash und schlägt mögliche Objektduplikate anhand lesbarer Modell- und Serienangaben vor. Unsichere Übereinstimmungen werden nicht still zusammengeführt. Eine Seriennummer auf einem eingebauten Lautsprecher ist beispielsweise nicht automatisch die Seriennummer der gesamten Box.
 
 ## KI und OCR
 

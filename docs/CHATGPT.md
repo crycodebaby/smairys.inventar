@@ -42,8 +42,7 @@ Beispiel für den HTTP-Aufruf mit dem Benutzer-Zugriffstoken im Authorization-He
   "operation_id": "99cdd700-b03a-4bc4-8a4b-d80b1c92c813",
   "title": "Röhre mit noch ungeprüftem Aufdruck",
   "brand": "",
-  "model": "",
-  "location": "Tubes"
+  "model": ""
 }
 ```
 

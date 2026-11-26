@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Session } from '@supabase/supabase-js';
 import { onlineManager, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent } from 'react';
 import { readCommands } from '../supabase/functions/_shared/commands.ts';
 import type { CommandName } from '../supabase/functions/_shared/commands.ts';
@@ -24,6 +24,7 @@ type Props = { identity: AccountIdentity; session: Session | null; shell: AppShe
 type ReadStorage = 'restoring' | 'ready' | 'unavailable';
 const pageSize = 20;
 const isOnline = () => onlineManager.isOnline();
+const usesSinglePane = () => window.matchMedia?.('(max-width: 760px)').matches;
 
 export default function InventoryWorkspace(props: Props) {
   const [cache] = useState(createInventoryQueryClient);
@@ -107,6 +108,8 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState({ query: '', offset: 0 });
   const [selection, setSelection] = useState<string | null>(null);
+  const previousSelection = useRef(selection);
+  const listScroll = useRef(0);
   const [notice, setNotice] = useState('');
   const [protectedWork, setProtectedWork] = useState(false);
   const [categoryProtected, setCategoryProtected] = useState(false);
@@ -130,6 +133,11 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   const labels = categories.data?.labels ?? [];
   const synchronization = syncPhase(connected && canRequest, syncRunning, outboxEntries);
 
+  useLayoutEffect(() => {
+    if (previousSelection.current === selection) return;
+    previousSelection.current = selection;
+    if (usesSinglePane()) window.scrollTo({ top: selection ? 0 : listScroll.current, behavior: 'instant' });
+  }, [selection]);
   useEffect(() => { accountActive.current = true; return () => { accountActive.current = false; }; }, []);
   useEffect(() => {
     let active = true;
@@ -187,14 +195,20 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
   }, [api, usingLocalCopy]);
 
   const protectEditor = useCallback((value: boolean) => { setProtectedWork(value); if (value) setNotice(''); }, []);
-  function open(next: string | null) { if (!protectedWork) { setNotice(''); setSelection(next); } }
+  function open(next: string | null) {
+    if (protectedWork) return;
+    if (!selection && next && usesSinglePane()) listScroll.current = window.scrollY;
+    setNotice('');
+    setSelection(next);
+  }
   function searchItems(event: FormEvent) { event.preventDefault(); setSearch({ query: query.trim(), offset: 0 }); }
   function created(item: Item) { setProtectedWork(false); setSelection(item.id); setNotice('Gespeichert'); }
 
   return <OutboxContext.Provider value={outbox}><div className={`inventory-workspace${selection ? ' has-selection' : ''}`}>
-    <div className="workspace-toolbar"><h1>Objekte</h1><div className="actions">
-      {selection && <button className="quiet mobile-back" disabled={protectedWork} onClick={() => open(null)}>Zurück</button>}
-      <button disabled={protectedWork} onClick={() => open('new')}>+ Objekt</button>
+    <div className="workspace-toolbar"><h1>Objekte</h1>
+      {selection && <button className="quiet mobile-back" disabled={protectedWork} onClick={() => open(null)}><span className="back-chevron" aria-hidden="true"/>Zurück</button>}
+      <div className="actions">
+      <button className="new-object" disabled={protectedWork || selection === 'new'} onClick={() => open('new')}><span aria-hidden="true">+</span> Objekt</button>
       <SettingsDialog email={identity.email} open={settingsOpen} onOpen={setSettingsOpen} onSignOut={onSignOut} signOutDisabled={protectedAny || syncRunning}
         entries={outboxEntries} storageError={storageError || readError} onSync={() => outbox.flush()} onDiscard={id => outbox.discardBlocked(id)}
         synchronization={synchronization} shell={shell} updateDisabled={protectedAny || syncRunning} />
@@ -202,11 +216,22 @@ function Workspace({ identity, session, shell, projectUrl, publicKey, onSignOut,
     {notice && <p role="status" className="saved-toast">{notice}</p>}
     {usingLocalCopy && <p className="connection-state state-message" role="status"><span aria-hidden="true"/>{!connected ? 'Offline · lokale Kopie' : !canRequest ? 'Lokale Kopie · Anmeldung wird benötigt' : 'Verbindung gestört · lokale Kopie'}</p>}
     <div className="workspace-grid"><aside className="collection-panel" aria-label="Inventarliste">
-      <form onSubmit={searchItems} className="search-form"><label className="sr-only" htmlFor={queryId}>Inventar durchsuchen</label><input id={queryId} type="search" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} placeholder="Suchen" /><button className="quiet small" type="submit" aria-label="Suchen">Suchen</button><button className="quiet small" disabled={!canRequest || !connected || list.isFetching} onClick={() => void list.refetch()} type="button" aria-label="Inventarliste aktualisieren">↻</button></form>
+      <form onSubmit={searchItems} className="search-form">
+        <label className="sr-only" htmlFor={queryId}>Inventar durchsuchen</label>
+        <div className="search-control"><input id={queryId} type="search" maxLength={200} value={query} onChange={event => setQuery(event.target.value)} placeholder="Suchen" enterKeyHint="search" />
+          <button className="quiet icon-control search-submit" type="submit" aria-label="Suchen"><span className="search-icon" aria-hidden="true"/></button>
+        </div>
+        <button className="quiet icon-control" disabled={!canRequest || !connected || list.isFetching} onClick={() => void list.refetch()} type="button" aria-label="Inventarliste aktualisieren">↻</button>
+      </form>
       {(!usingLocalCopy && list.isPending) || (usingLocalCopy && storage !== 'unavailable' && !items.length && localCatalog.isPending) ? <p role="status" className="compact-status state-message">Laden …</p> : !usingLocalCopy && list.error && !list.data ? <p role="alert" className="error">{list.error.message}</p> : items.length ? <ul className="inventory-list">{items.map(item => {
         const label = labels.find(value => value.id === item.category_id);
         const subtitle = [item.brand, item.model].filter(Boolean).join(' · ');
-        return <li key={item.id}><button className="item-row" aria-pressed={selection === item.id} disabled={protectedWork} onClick={() => open(item.id)}><span className="item-number">#{item.inventory_number}</span><strong>{item.title}</strong>{subtitle && <span>{subtitle}</span>}{label && <span className="category-label"><i style={{ backgroundColor: label.color }} />{label.name}</span>}</button></li>;
+        return <li key={item.id}><button className="item-row" aria-pressed={selection === item.id} disabled={protectedWork} onClick={() => open(item.id)}>
+          <span className="item-number">#{item.inventory_number}</span>
+          <strong>{item.title}</strong>
+          {subtitle && <span className="item-subtitle">{subtitle}</span>}
+          {label && <span className="category-label"><i style={{ backgroundColor: label.color }} />{label.name}</span>}
+        </button></li>;
       })}</ul> : <p className="compact-status">{usingLocalCopy && (storage === 'unavailable' || localCatalog.isError) ? 'Lokale Kopie nicht verfügbar' : search.query ? 'Keine Treffer' : usingLocalCopy && !list.data ? 'Keine lokale Objektliste' : 'Keine Objekte'}</p>}
       {!usingLocalCopy && list.error && list.data && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}
       {!usingLocalCopy && (search.offset > 0 || items.length === pageSize) && <nav className="pagination" aria-label="Ergebnisseiten"><button className="quiet small" disabled={list.isFetching || search.offset === 0} onClick={() => setSearch(value => ({ ...value, offset: Math.max(0, value.offset - pageSize) }))}>Zurück</button><span className="muted">{Math.floor(search.offset / pageSize) + 1}</span><button className="quiet small" disabled={list.isFetching || !!list.error || items.length < pageSize || search.offset >= 100000} onClick={() => setSearch(value => ({ ...value, offset: value.offset + pageSize }))}>Weiter</button></nav>}
