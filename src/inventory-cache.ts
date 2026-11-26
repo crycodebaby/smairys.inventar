@@ -23,28 +23,33 @@ function withNote(notes: Note[], note: Note) {
 
 // Only confirmed server responses enter the cache. Cancelling affected reads first
 // prevents an older in-flight response from replacing the acknowledged result.
-export async function applyConfirmedInventoryWrite<N extends WriteName>(client: QueryClient, owner: string, name: N, input: CommandInput<N>, result: CommandResult<N>) {
+export async function applyConfirmedInventoryWrite<N extends WriteName>(client: QueryClient, owner: string, name: N, input: CommandInput<N>, result: CommandResult<N>, deferListRefresh = false) {
   if ((name === 'create_item' || name === 'update_item') && 'item' in result) {
     const item = result.item;
     await Promise.all([
       client.cancelQueries({ queryKey: inventoryKeys.item(owner, item.id), exact: true }),
       client.cancelQueries({ queryKey: inventoryKeys.lists(owner) }),
     ]);
-    client.setQueryData<Detail>(inventoryKeys.item(owner, item.id), old => name === 'create_item' ? { item, notes: [] } : old ? { ...old, item } : undefined);
-    client.setQueriesData<{ items: Item[] }>({ queryKey: inventoryKeys.lists(owner) }, old => old ? { items: old.items.map(value => value.id === item.id ? item : value) } : old);
-    void client.invalidateQueries({ queryKey: inventoryKeys.lists(owner) });
+    client.setQueryData<Detail>(inventoryKeys.item(owner, item.id), old => {
+      if (old) return old.item.revision >= item.revision ? old : { ...old, item };
+      return name === 'create_item' ? { item, notes: [] } : undefined;
+    });
+    client.setQueriesData<{ items: Item[] }>({ queryKey: inventoryKeys.lists(owner) }, old => old ? {
+      items: old.items.map(value => value.id === item.id && value.revision < item.revision ? item : value),
+    } : old);
+    void client.invalidateQueries({ queryKey: inventoryKeys.lists(owner), refetchType: deferListRefresh ? 'none' : 'active' });
   } else if (name === 'add_note' && 'note' in result) {
     const note = result.note;
     const key = inventoryKeys.item(owner, note.item_id);
     await client.cancelQueries({ queryKey: key, exact: true });
     client.setQueryData<Detail>(key, old => old ? { ...old, notes: withNote(old.notes, note) } : old);
-    void client.invalidateQueries({ queryKey: key, exact: true });
+    void client.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' });
   } else if (name === 'create_label' && 'label' in result) {
     const label = result.label;
     const key = inventoryKeys.labels(owner, label.kind);
     await client.cancelQueries({ queryKey: key, exact: true });
     client.setQueryData<{ labels: Label[] }>(key, old => old ? { labels: [...old.labels.filter(value => value.id !== label.id), label].sort((a, b) => a.name.localeCompare(b.name)) } : old);
-    void client.invalidateQueries({ queryKey: key, exact: true });
+    void client.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' });
   } else {
     // Future write types must supply an explicit invalidation rule.
     throw new Error(`Cache-Regel fehlt: ${name}, ${Object.keys(input).join(',')}`);

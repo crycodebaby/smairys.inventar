@@ -6,10 +6,14 @@ import type { FormEvent } from 'react';
 import { readCommands } from '../supabase/functions/_shared/commands.ts';
 import type { CommandName } from '../supabase/functions/_shared/commands.ts';
 import { createInventoryApi } from './inventory-client.ts';
-import type { CommandInput, CommandResult, InventoryApi, Item, Label, WriteName } from './inventory-client.ts';
+import type { CommandInput, CommandResult, InventoryApi, InventoryRequestOptions, Item, Label, WriteName } from './inventory-client.ts';
 import { applyConfirmedInventoryWrite, createInventoryQueryClient, inventoryKeys } from './inventory-cache.ts';
 import { ItemEditor, NewItem } from './ItemEditor.tsx';
 import { useInventoryWrite } from './use-inventory-write.ts';
+import { InventoryOutbox } from './inventory-outbox.ts';
+import type { OutboxEntry } from './inventory-outbox.ts';
+import { OutboxContext } from './outbox-context.ts';
+import { SettingsDialog } from './SettingsDialog.tsx';
 
 type Props = { session: Session; projectUrl: string; publicKey: string; onSignOut: () => void };
 const pageSize = 20;
@@ -31,19 +35,26 @@ function Workspace({ session, projectUrl, publicKey, onSignOut }: Props) {
       return latestSession.current.access_token;
     } });
     const execute = createInventoryApi(async (name, input, signal) => {
-      const request = client.rpc('inventory_command', { command_name: name, arguments: input });
-      const { data, error } = await (signal ? request.abortSignal(signal) : request);
-      return { data, error };
+      const timeout = AbortSignal.timeout(12_000);
+      const request = client.rpc('inventory_command', { command_name: name, arguments: input }).retry(false);
+      const { data, error, status } = await request.abortSignal(signal ? AbortSignal.any([signal, timeout]) : timeout);
+      return { data, error, status };
     });
-    return async <N extends CommandName>(name: N, input: CommandInput<N>, options?: { signal?: AbortSignal }): Promise<CommandResult<N>> => {
+    return async <N extends CommandName>(name: N, input: CommandInput<N>, options?: InventoryRequestOptions): Promise<CommandResult<N>> => {
       const result = await execute(name, input, options);
       if (accountActive.current && !readCommands.has(name)) {
         // Cache failures must not turn a confirmed write into an unconfirmed one.
-        await applyConfirmedInventoryWrite(cache, owner, name as WriteName, input as CommandInput<WriteName>, result as CommandResult<WriteName>).catch(() => { void cache.invalidateQueries({ queryKey: inventoryKeys.account(owner) }); });
+        await applyConfirmedInventoryWrite(cache, owner, name as WriteName, input as CommandInput<WriteName>, result as CommandResult<WriteName>, options?.deferListRefresh).catch(() => { void cache.invalidateQueries({ queryKey: inventoryKeys.account(owner), refetchType: 'none' }); });
       }
       return result;
     };
   }, [projectUrl, publicKey, cache, owner]);
+  const outbox = useMemo(() => new InventoryOutbox(owner, api, {
+    onListChanged: () => { void cache.refetchQueries({ queryKey: inventoryKeys.lists(owner), type: 'active', stale: true }, { cancelRefetch: false }); },
+  }), [owner, api, cache]);
+  const [outboxEntries, setOutboxEntries] = useState<OutboxEntry[]>([]);
+  const [storageError, setStorageError] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState({ query: '', offset: 0 });
   const [selection, setSelection] = useState<string | null>(null);
@@ -60,6 +71,19 @@ function Workspace({ session, projectUrl, publicKey, onSignOut }: Props) {
   const labels = categories.data?.labels ?? [];
 
   useEffect(() => { accountActive.current = true; return () => { accountActive.current = false; }; }, []);
+  useEffect(() => {
+    const unsubscribe = outbox.subscribe(entries => { setOutboxEntries(entries); setStorageError(false); }, () => setStorageError(true));
+    const wake = () => { if (document.visibilityState !== 'hidden') void outbox.flush(); };
+    void outbox.flush();
+    window.addEventListener('online', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('online', wake);
+      document.removeEventListener('visibilitychange', wake);
+      outbox.stop();
+    };
+  }, [outbox]);
   useEffect(() => {
     if (!protectedAny) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -89,11 +113,12 @@ function Workspace({ session, projectUrl, publicKey, onSignOut }: Props) {
   function searchItems(event: FormEvent) { event.preventDefault(); setSearch({ query: query.trim(), offset: 0 }); }
   function created(item: Item) { setProtectedWork(false); setSelection(item.id); setNotice('Gespeichert'); }
 
-  return <div className={`inventory-workspace${selection ? ' has-selection' : ''}`}>
+  return <OutboxContext.Provider value={outbox}><div className={`inventory-workspace${selection ? ' has-selection' : ''}`}>
     <div className="workspace-toolbar"><h1>Objekte</h1><div className="actions">
       {selection && <button className="quiet mobile-back" disabled={protectedWork} onClick={() => open(null)}>Zurück</button>}
       <button disabled={protectedWork} onClick={() => open('new')}>+ Objekt</button>
-      <details className="account-menu"><summary>Konto</summary><div><p className="muted account-line">{session.user.email}</p><button className="quiet" disabled={protectedAny} onClick={onSignOut}>Abmelden</button></div></details>
+      <SettingsDialog email={session.user.email} open={settingsOpen} onOpen={setSettingsOpen} onSignOut={onSignOut} signOutDisabled={protectedAny}
+        entries={outboxEntries} storageError={storageError} onSync={() => outbox.flush()} onDiscard={id => outbox.discardBlocked(id)} />
     </div></div>
     {notice && <p role="status" className="saved-toast">{notice}</p>}
     <div className="workspace-grid"><aside className="collection-panel" aria-label="Inventarliste">
@@ -113,17 +138,17 @@ function Workspace({ session, projectUrl, publicKey, onSignOut }: Props) {
       {selection === 'new' ? <NewItem api={api} labels={labels} onCreated={created} onCancel={() => { setProtectedWork(false); setSelection(null); }} onProtected={protectEditor} /> : detail.isPending ? <p role="status">{detail.fetchStatus === 'paused' ? 'Offline' : 'Laden …'}</p> : detail.error && !detail.data ? <div><p role="alert" className="error">{detail.error.message}</p><button className="quiet" onClick={() => void detail.refetch()}>Erneut laden</button></div> : detail.data ? <><ItemEditor key={detail.data.item.id} api={api} initial={detail.data.item} notes={detail.data.notes} labels={labels} onSaved={() => setNotice('Gespeichert')} onNote={() => setNotice('Gespeichert')} onProtected={protectEditor} refreshAvailable={false} onReload={() => void detail.refetch()} />{detail.error && <p role="alert" className="error">Aktualisierung fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand.</p>}</> : null}
     </div>}
     </div>
-  </div>;
+  </div></OutboxContext.Provider>;
 }
 
 function CategoryCreator({ api, onCreated, onProtected }: { api: InventoryApi; onCreated: (label: Label) => void; onProtected: (value: boolean) => void }) {
   const [name, setName] = useState(''); const [color, setColor] = useState('#8eacd0'); const prefix = useId();
   const write = useInventoryWrite(api, 'create_label');
-  const dirty = !!name || color !== '#8eacd0' || write.locked;
+  const dirty = !write.queued && (!!name || color !== '#8eacd0' || write.locked);
   useEffect(() => { onProtected(dirty); return () => onProtected(false); }, [dirty, onProtected]);
   async function save(event: FormEvent) {
     event.preventDefault(); const result = await write.submit({ kind: 'category', name, color });
     if (result) { setName(''); setColor('#8eacd0'); onCreated(result.label); }
   }
-  return <form onSubmit={save} className="category-form"><label className="sr-only" htmlFor={`${prefix}-name`}>Kategoriename</label><div className="category-inputs"><input id={`${prefix}-name`} required maxLength={200} value={name} disabled={write.locked} onChange={event => setName(event.target.value)} placeholder="Neue Kategorie" /><input type="color" aria-label="Kategoriefarbe" value={color} disabled={write.locked} onChange={event => setColor(event.target.value)} /><button type="submit" className="quiet" disabled={write.busy} aria-label={write.uncertain ? 'Kategorie erneut prüfen' : 'Kategorie erstellen'}>{write.uncertain ? 'Prüfen' : '+'}</button></div>{dirty && !write.locked && <button type="button" className="quiet small" onClick={() => { setName(''); setColor('#8eacd0'); write.clearError(); }}>Verwerfen</button>}{write.error && <p role="alert" className="error">{write.error.message}</p>}</form>;
+  return <form onSubmit={save} className="category-form"><label className="sr-only" htmlFor={`${prefix}-name`}>Kategoriename</label><div className="category-inputs"><input id={`${prefix}-name`} required maxLength={200} value={name} disabled={write.locked} onChange={event => setName(event.target.value)} placeholder="Neue Kategorie" /><input type="color" aria-label="Kategoriefarbe" value={color} disabled={write.locked} onChange={event => setColor(event.target.value)} /><button type="submit" className="quiet" disabled={write.busy || write.queued} aria-label={write.uncertain ? 'Kategorie erneut prüfen' : 'Kategorie erstellen'}>{write.uncertain ? 'Prüfen' : '+'}</button></div>{write.queued && <p className="muted" role="status">Lokal gespeichert</p>}{dirty && !write.locked && <button type="button" className="quiet small" onClick={() => { setName(''); setColor('#8eacd0'); write.clearError(); }}>Verwerfen</button>}{write.error && <p role="alert" className="error">{write.error.message}</p>}</form>;
 }

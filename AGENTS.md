@@ -17,6 +17,8 @@ Lies zuerst STATUS.md und PROJEKT.md. Lade weitere Dokumente passend zur Aufgabe
 | Web-Hosting, Vercel, Domain oder Build-Umgebung | docs/DEPLOYMENT.md |
 | Nächste Umsetzung und Abnahmereihenfolge | docs/ROADMAP.md |
 | Bildzuordnung, OCR, KI-Merkmale, Quellen, Verlauf, Export oder ruhige Touch-UX | docs/MEDIEN-UND-WISSEN.md |
+| Offline, Warteschlange und Anfragelast | docs/OFFLINE-UND-LAST.md |
+| Typografie, Touch, Abstände und Bewegung | docs/UI-DESIGN.md |
 | Begründung externer technischer Aussagen | docs/QUELLEN.md |
 
 STATUS.md beschreibt den tatsächlichen Stand. Architekturentscheidungen enthalten ihren Status und ihre Änderungskriterien. PROJEKT.md enthält die Produktanforderungen. schema.sql beschreibt ausschließlich den bestehenden SQLite-Startkatalog. Während der Cloud-Umsetzung werden versionierte Migrationen die maßgebliche Quelle für das Serverschema.

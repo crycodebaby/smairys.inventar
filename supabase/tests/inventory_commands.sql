@@ -14,12 +14,25 @@ declare
   item_id uuid;
   result jsonb;
 begin
+  result := public.inventory_command('search_inventory','{"query":"","limit":20,"offset":0}');
+  if result is distinct from '{"items":[]}'::jsonb then raise exception 'Empty startup search failed'; end if;
+  result := public.inventory_command('list_labels','{"kind":"category"}');
+  if result is distinct from '{"labels":[]}'::jsonb then raise exception 'Empty startup category read failed'; end if;
   first_result := public.inventory_command('create_item','{"operation_id":"e604f8e0-f01a-4dca-8c06-eb974e99c975","title":"Test ECC83"}');
   repeated_result := public.inventory_command('create_item','{"operation_id":"e604f8e0-f01a-4dca-8c06-eb974e99c975","title":"Test ECC83"}');
   if first_result <> repeated_result then raise exception 'Repeated command changed its result'; end if;
   item_id := (first_result->'item'->>'id')::uuid;
   perform set_config('inventory.test_item', item_id::text,true);
   if (select count(*) from public.inventory_items) <> 1 then raise exception 'Unexpected item count'; end if;
+  result := public.inventory_command('search_inventory','{"query":"ecc83","limit":20,"offset":0}');
+  if jsonb_array_length(result->'items') is distinct from 1 or (result->'items'->0->>'id')::uuid is distinct from item_id then raise exception 'Matching search failed'; end if;
+  result := public.inventory_command('search_inventory','{"query":"ecc83","limit":1,"offset":1}');
+  if result is distinct from '{"items":[]}'::jsonb then raise exception 'Search pagination failed'; end if;
+  begin
+    perform public.inventory_command('search_inventory',jsonb_build_object('query',repeat('x',262145)));
+    raise exception 'Oversized command accepted';
+  exception when sqlstate '22023' then null;
+  end;
   begin
     perform public.inventory_command('create_item','{"operation_id":"e604f8e0-f01a-4dca-8c06-eb974e99c975","title":"Different payload"}');
     raise exception 'Changed idempotency payload was accepted';
@@ -45,6 +58,7 @@ select set_config('request.jwt.claims','{"sub":"d4f72251-bc6b-4ab1-8ae3-45abe3f1
 do $$
 begin
   if (select count(*) from public.inventory_items) <> 0 then raise exception 'Cross-account SELECT leak'; end if;
+  if public.inventory_command('search_inventory','{"query":"ecc83"}') is distinct from '{"items":[]}'::jsonb then raise exception 'Cross-account search leak'; end if;
   begin
     perform public.inventory_command('get_item',jsonb_build_object('item_id',current_setting('inventory.test_item')));
     raise exception 'Cross-account command leak';

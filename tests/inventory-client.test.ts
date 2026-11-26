@@ -47,3 +47,9 @@ test('a duplicate category is a definite rejection rather than an uncertain netw
   const api = createInventoryApi(async () => ({ data: null, error: { code: '23505', message: 'private database detail' } }));
   await assert.rejects(api('create_label', { operation_id: crypto.randomUUID(), kind: 'category', name: 'Tubes' }), error => error instanceof InventoryError && !error.uncertain && !error.message.includes('private database detail'));
 });
+
+test('an automatic startup read cannot show the copy for a rejected write', async () => {
+  const api = createInventoryApi(async () => ({ data: null, error: { code: '42702', message: 'ambiguous alias' }, status: 400 }));
+  await assert.rejects(api('search_inventory', {}), { message: 'Die Objektliste konnte nicht geladen werden.' });
+  await assert.rejects(api('list_labels', { kind: 'category' }), { message: 'Kategorien konnten nicht geladen werden.' });
+});

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { commandSchemas } from '../supabase/functions/_shared/commands.ts';
+import { commandSchemas, readCommands } from '../supabase/functions/_shared/commands.ts';
 import type { CommandName } from '../supabase/functions/_shared/commands.ts';
 
 const itemSchema = z.object({
@@ -25,8 +25,9 @@ export type Note = z.output<typeof noteSchema>;
 export type ItemDraft = Pick<Item, 'title' | 'brand' | 'model' | 'location' | 'description'>;
 export type CommandInput<N extends CommandName> = z.input<(typeof commandSchemas)[N]>;
 export type CommandResult<N extends CommandName> = z.output<(typeof resultSchemas)[N]>;
-export type InventoryApi = <N extends CommandName>(name: N, input: CommandInput<N>, options?: { signal?: AbortSignal }) => Promise<CommandResult<N>>;
-export type CommandTransport = (name: CommandName, input: unknown, signal?: AbortSignal) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
+export type InventoryRequestOptions = { signal?: AbortSignal; deferListRefresh?: boolean };
+export type InventoryApi = <N extends CommandName>(name: N, input: CommandInput<N>, options?: InventoryRequestOptions) => Promise<CommandResult<N>>;
+export type CommandTransport = (name: CommandName, input: unknown, signal?: AbortSignal) => Promise<{ data: unknown; error: { message: string; code?: string } | null; status?: number }>;
 
 export class InventoryError extends Error {
   uncertain: boolean;
@@ -46,16 +47,34 @@ function explainError(code?: string) {
 
 export function createInventoryApi(transport: CommandTransport): InventoryApi {
   return async <N extends CommandName>(name: N, input: CommandInput<N>, options?: { signal?: AbortSignal }): Promise<CommandResult<N>> => {
+    const reading = readCommands.has(name);
     const parsed = commandSchemas[name].safeParse(input);
     if (!parsed.success) throw new InventoryError('Bitte prüfe die Pflichtfelder und Textlängen.');
     let response: Awaited<ReturnType<CommandTransport>>;
     try { response = await transport(name, parsed.data, options?.signal); }
-    catch { throw new InventoryError('Keine eindeutige Serverbestätigung. Wiederhole denselben Auftrag über „Erneut prüfen“.', true); }
-    if (response.error) throw new InventoryError(response.error.code ? explainError(response.error.code) : 'Keine eindeutige Serverbestätigung. Bitte erneut prüfen.', !response.error.code);
+    catch {
+      if (reading) throw new InventoryError('Laden fehlgeschlagen. Prüfe die Verbindung und versuche es erneut.');
+      throw new InventoryError('Keine eindeutige Serverbestätigung. Wiederhole denselben Auftrag über „Erneut prüfen“.', true);
+    }
+    if (response.error) {
+      const code = response.error.code;
+      const status = response.status ?? 0;
+      const auth = status === 401 || code === '28000' || code === 'PGRST301' || code === 'PGRST303';
+      if (auth) throw new InventoryError('Die Anmeldung muss erneuert werden.', !reading);
+      if (reading) {
+        const subject = name === 'list_labels' ? 'Kategorien konnten' : name === 'get_item' ? 'Das Objekt konnte' : 'Die Objektliste konnte';
+        throw new InventoryError(subject + ' nicht geladen werden.');
+      }
+      const transient = !code || status === 429 || status >= 500 || code === '57014' || code === '40001' || code === '40P01';
+      throw new InventoryError(transient ? 'Keine eindeutige Serverbestätigung.' : explainError(code), transient);
+    }
     const conflict = z.object({ error: z.literal('REVISION_CONFLICT'), current: itemSchema }).safeParse(response.data);
     if (conflict.success) throw new RevisionConflict(conflict.data.current);
     const result = resultSchemas[name].safeParse(response.data);
-    if (!result.success) throw new InventoryError('Die Serverantwort konnte nicht bestätigt werden. Bitte denselben Auftrag erneut prüfen.', true);
+    if (!result.success) {
+      if (reading) throw new InventoryError('Unerwartete Antwort beim Laden.');
+      throw new InventoryError('Die Serverantwort konnte nicht bestätigt werden. Bitte denselben Auftrag erneut prüfen.', true);
+    }
     return result.data as CommandResult<N>;
   };
 }

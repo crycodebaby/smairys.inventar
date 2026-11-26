@@ -49,3 +49,14 @@ test('a new category changes category data without invalidating item lists or an
   assert.equal(cache.getQueryState(inventoryKeys.list('robin', '', 0))?.isInvalidated, false);
   cache.clear();
 });
+
+test('an idempotent retry receipt cannot roll a newer cached revision back', async () => {
+  const cache = createInventoryQueryClient();
+  const key = inventoryKeys.item('robin', item.id);
+  const newer = { ...item, revision: 3, title: 'Neuer Stand' };
+  cache.setQueryData(key, { item: newer, notes: [note] });
+  const input = { operation_id: crypto.randomUUID(), item_id: item.id, expected_revision: 1, changes: { title: 'Älterer Stand' } };
+  await applyConfirmedInventoryWrite(cache, 'robin', 'update_item', input, { item: { ...item, revision: 2, title: 'Älterer Stand' } });
+  assert.deepEqual(cache.getQueryData(key), { item: newer, notes: [note] });
+  cache.clear();
+});

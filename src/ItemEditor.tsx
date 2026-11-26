@@ -22,7 +22,7 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
   const [category, setCategory] = useState('');
   const write = useInventoryWrite(api, 'create_item');
   const categoryId = useId();
-  const dirty = Object.values(draft).some(Boolean) || !!category || write.locked;
+  const dirty = !write.queued && (Object.values(draft).some(Boolean) || !!category || write.locked);
   useEffect(() => { onProtected(dirty); return () => onProtected(false); }, [dirty, onProtected]);
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -35,7 +35,7 @@ export function NewItem({ api, labels, onCreated, onCancel, onProtected }: { api
       <div className="field field-wide"><label htmlFor={categoryId}>Kategorie</label><select id={categoryId} value={category} onChange={event => setCategory(event.target.value)}><option value="">Noch offen</option>{labels.map(label => <option key={label.id} value={label.id}>{label.name}</option>)}</select></div>
     </fieldset>
       {write.error && <p role="alert" className="error">{write.error.message}</p>}
-      <div className="actions"><button disabled={write.busy} type="submit">{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Gegenstand speichern'}</button><button className="quiet" type="button" disabled={write.locked} onClick={onCancel}>Abbrechen</button></div>
+      <div className="actions"><button disabled={write.busy || write.queued} type="submit">{write.queued ? 'Lokal gespeichert' : write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Gegenstand speichern'}</button><button className="quiet" type="button" disabled={write.locked && !write.queued} onClick={onCancel}>{write.queued ? 'Schließen' : 'Abbrechen'}</button></div>
     </form>
   </section>;
 }
@@ -51,11 +51,11 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
   const tabId = useId();
   const write = useInventoryWrite(api, 'update_item');
   const dirty = Object.keys(changedFields(itemDraft(base), draft)).length > 0;
-  const protectedWork = dirty || write.locked || noteProtected;
+  const protectedWork = (!write.queued && (dirty || write.locked)) || noteProtected;
   useEffect(() => { onProtected(protectedWork); return () => onProtected(false); }, [protectedWork, onProtected]);
   useEffect(() => {
-    if (!protectedWork && initial.revision > base.revision) { setBase(initial); setDraft(itemDraft(initial)); }
-  }, [initial, base.revision, protectedWork]);
+    if (!protectedWork && !write.queued && initial.revision > base.revision) { setBase(initial); setDraft(itemDraft(initial)); }
+  }, [initial, base.revision, protectedWork, write.queued]);
   const conflict = write.error instanceof RevisionConflict ? write.error.current : null;
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -77,8 +77,8 @@ export function ItemEditor({ api, initial, notes, labels, onSaved, onNote, onPro
       {conflict && <div className="conflict"><h3>Aktuellen Stand vergleichen</h3><dl>{draftKeys.filter(key => draft[key] !== conflict[key]).map(key => <div key={key}><dt>{fieldLabels[key]}</dt><dd><span className="muted">Auf dem Server:</span> {conflict[key] || 'Leer'}</dd><dd><span className="muted">Deine Eingabe:</span> {draft[key] || 'Leer'}</dd></div>)}</dl>
         <div className="actions"><button type="button" className="quiet" onClick={() => { setDraft(rebaseDraft(itemDraft(base), draft, conflict)); setBase(conflict); write.clearError(); }}>Meine Änderungen übernehmen</button><button type="button" className="quiet" onClick={() => { setBase(conflict); setDraft(itemDraft(conflict)); write.clearError(); }}>Serverstand übernehmen</button></div><p className="muted">Die Auswahl wird erst mit „Änderungen speichern“ auf dem Server gespeichert.</p>
       </div>}
-      <div className="actions"><button type="submit" disabled={write.busy || !!conflict || (!dirty && !write.uncertain)}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Änderungen speichern'}</button>{!write.locked && dirty && <button className="quiet" type="button" onClick={() => { setDraft(itemDraft(base)); write.clearError(); }}>Eingaben zurücksetzen</button>}</div>
-      <p className="muted save-status" role="status">{write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
+      <div className="actions"><button type="submit" disabled={write.busy || write.queued || !!conflict || (!dirty && !write.uncertain)}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Änderungen speichern'}</button>{!write.locked && dirty && <button className="quiet" type="button" onClick={() => { setDraft(itemDraft(base)); write.clearError(); }}>Eingaben zurücksetzen</button>}</div>
+      <p className="muted save-status" role="status">{write.queued ? 'Lokal gespeichert · ausstehend' : write.uncertain ? 'Unbestätigt · erneut prüfen' : dirty ? 'Ungespeichert' : 'Gespeichert'}</p>
     </form>
     </div>
     <div role="tabpanel" id={`${tabId}-notes-panel`} aria-labelledby={`${tabId}-notes`} hidden={tab !== 'notes'} className="notes-section">{notes.length ? <ul className="notes-list">{notes.map(note => <li key={note.id}><div className="section-header"><h4>{note.title}</h4>{note.pinned && <span className="badge">Angeheftet</span>}</div>{note.verbatim_text && <><span className="eyebrow">Abschrift</span><p className="preserve-space">{note.verbatim_text}</p></>}{note.interpretation && <><span className="eyebrow">Einordnung</span><p className="preserve-space">{note.interpretation}</p></>}{noteLinks([note]).map(link => <a className="source-link" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{new URL(link.url).hostname} ↗</a>)}<span className="muted">{note.attribution === 'verified' ? 'Belegt' : note.attribution === 'reported_by_user' ? 'Laut Nutzer' : 'Ungeklärt'}</span></li>)}</ul> : null}
@@ -91,7 +91,7 @@ function NewNote({ api, item, onCreated, onProtected }: { api: InventoryApi; ite
   const [title, setTitle] = useState(''); const [verbatim, setVerbatim] = useState(''); const [interpretation, setInterpretation] = useState('');
   const [attribution, setAttribution] = useState<Note['attribution']>('unknown'); const [pinned, setPinned] = useState(false);
   const write = useInventoryWrite(api, 'add_note'); const prefix = useId();
-  const dirty = !!(title || verbatim || interpretation || pinned || attribution !== 'unknown') || write.locked;
+  const dirty = !write.queued && (!!(title || verbatim || interpretation || pinned || attribution !== 'unknown') || write.locked);
   useEffect(() => { onProtected(dirty); return () => onProtected(false); }, [dirty, onProtected]);
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -104,6 +104,6 @@ function NewNote({ api, item, onCreated, onProtected }: { api: InventoryApi; ite
     <label htmlFor={`${prefix}-interpretation`}>Einordnung / Interpretation</label><textarea id={`${prefix}-interpretation`} rows={3} maxLength={20000} value={interpretation} onChange={event => setInterpretation(event.target.value)} />
     <label htmlFor={`${prefix}-attribution`}>Zuschreibung der Notiz</label><select id={`${prefix}-attribution`} value={attribution} onChange={event => setAttribution(event.target.value as Note['attribution'])}><option value="unknown">Ungeklärt</option><option value="reported_by_user">Laut Nutzer</option><option value="verified">Belegt</option></select>
     <label className="checkbox-label"><input type="checkbox" checked={pinned} onChange={event => setPinned(event.target.checked)} />Oben anheften</label>
-  </fieldset>{write.error && <p role="alert" className="error">{write.error.message}</p>}<div className="actions"><button type="submit" disabled={write.busy}>{write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Notiz speichern'}</button>{dirty && !write.locked && <button type="button" className="quiet" onClick={() => { setTitle(''); setVerbatim(''); setInterpretation(''); setAttribution('unknown'); setPinned(false); write.clearError(); }}>Eingaben verwerfen</button>}</div>
+  </fieldset>{write.error && <p role="alert" className="error">{write.error.message}</p>}<div className="actions"><button type="submit" disabled={write.busy || write.queued}>{write.queued ? 'Lokal gespeichert' : write.busy ? 'Wird gespeichert …' : write.uncertain ? 'Erneut prüfen' : 'Notiz speichern'}</button>{dirty && !write.locked && <button type="button" className="quiet" onClick={() => { setTitle(''); setVerbatim(''); setInterpretation(''); setAttribution('unknown'); setPinned(false); write.clearError(); }}>Eingaben verwerfen</button>}</div>
   </form>;
 }
